@@ -12,7 +12,8 @@ interface ResultsDashboardProps {
 
 const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, onReset }) => {
   const handleDownloadPdf = () => {
-    generatePdfReport(results, clients);
+    // Ya no necesita argumentos, llamará a la nueva función de captura
+    generatePdfReport();
   };
 
   const handleDownloadExcel = () => {
@@ -31,7 +32,8 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, o
   ];
 
   return (
-    <div className="space-y-6">
+    // Se ha añadido el id="report-content" aquí para marcar todo el div para la captura
+    <div className="space-y-6" id="report-content">
       <div className="bg-white p-6 rounded-xl shadow-lg">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
             <div>
