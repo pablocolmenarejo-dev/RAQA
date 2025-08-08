@@ -1,7 +1,8 @@
 // /components/LoginScreen.tsx
 
 import React, { useState } from 'react';
-import { Stethoscope, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
+// Ya no necesitamos el fonendoscopio de lucide-react
 
 interface LoginScreenProps {
   onLoginSuccess: () => void;
@@ -12,7 +13,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Estas son las credenciales de acceso. Puedes cambiarlas.
   const HARDCODED_USERNAME = 'admin';
   const HARDCODED_PASSWORD = 'PharmaValidator2025!';
 
@@ -30,10 +30,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-xl shadow-lg">
         <div className="flex flex-col items-center">
-          <Stethoscope className="h-12 w-12 text-[#00338D]" />
-          <h1 className="mt-4 text-2xl font-bold text-center text-[#333333]">
-            PharmaClient Validator
-          </h1>
+            {/* Logo de Meisys */}
+            <img src="/meisys-logo.webp" alt="Meisys Logo" className="h-12 w-auto" />
+
+            {/* Nuevo nombre de la aplicación */}
+            <h1 className="mt-4 text-2xl font-bold text-center text-[#333333]">
+                Meisys Client Validator
+            </h1>
           <p className="text-sm text-gray-600">Por favor, inicia sesión para continuar</p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
