@@ -29,13 +29,12 @@ const App: React.FC = () => {
   const [projectName, setProjectName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // --- Estados para la eliminación ---
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [reportToDeleteId, setReportToDeleteId] = useState<string | null>(null);
   const [deleteUsername, setDeleteUsername] = useState('');
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [historyVersion, setHistoryVersion] = useState(0); // Para forzar recarga del historial
+  const [historyVersion, setHistoryVersion] = useState(0);
 
 
   const handleLoginSuccess = (user: string) => {
@@ -45,6 +44,7 @@ const App: React.FC = () => {
   
   const handleFileSelected = (file: File) => {
     setSelectedFile(file);
+    setStatus('project_name'); // Nuevo estado para pedir el nombre del proyecto
   };
 
   const handleProjectNameSubmit = async (e: React.FormEvent) => {
@@ -95,23 +95,17 @@ const App: React.FC = () => {
 
   const handleConfirmDelete = (e: React.FormEvent) => {
     e.preventDefault();
-    // Aquí usamos las mismas credenciales del login. Se podrían usar otras.
     if (deleteUsername === 'admin' && deletePassword === 'PharmaValidator2025!') {
         try {
             const history = JSON.parse(localStorage.getItem('validationHistory') || '[]');
             const updatedHistory = history.filter((report: any) => report.id !== reportToDeleteId);
             localStorage.setItem('validationHistory', JSON.stringify(updatedHistory));
-            
-            // Forzar la actualización del componente FileUpload
             setHistoryVersion(v => v + 1);
-
-            // Limpiar y cerrar el modal
             setShowDeleteModal(false);
             setReportToDeleteId(null);
             setDeleteUsername('');
             setDeletePassword('');
             setDeleteError(null);
-
         } catch (error) {
             setDeleteError("Error deleting the report.");
         }
@@ -119,7 +113,6 @@ const App: React.FC = () => {
         setDeleteError("Invalid credentials. Deletion denied.");
     }
   };
-
 
   const startSearchForCurrentClient = useCallback(async () => {
     if (!currentClient || status !== 'validating') return;
@@ -142,7 +135,6 @@ const App: React.FC = () => {
   useEffect(() => {
      if (status === 'validating' && currentIndex < clients.length && currentSearchIndex < SEARCH_CASCADE.length) { startSearchForCurrentClient(); }
   }, [currentSearchIndex, status, currentIndex, clients.length, startSearchForCurrentClient]);
-
 
   const handleProcessingError = (err: unknown, defaultMessage: string) => {
     console.error("Processing Error:", err);
@@ -190,68 +182,21 @@ const App: React.FC = () => {
     setCurrentSearchIndex(0); setPotentialMatches([]); setIsViewingHistory(false);
     setSelectedFile(null); setProjectName('');
   };
+  
+  // --- Renderizado Lógico Principal ---
 
   if (!isAuthenticated) {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   }
-  
-  // Renderizar el modal de eliminación si está activo
-  if (showDeleteModal) {
-    return (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-sm">
-                <form onSubmit={handleConfirmDelete}>
-                    <div className="text-center">
-                        <ShieldAlert className="mx-auto h-12 w-12 text-red-500" />
-                        <h3 className="mt-4 text-lg font-medium text-gray-900">Confirm Deletion</h3>
-                        <p className="mt-2 text-sm text-gray-600">
-                            Please enter credentials to permanently delete this report. This action cannot be undone.
-                        </p>
-                    </div>
-                    <div className="mt-6 space-y-4">
-                        <input
-                            type="text"
-                            placeholder="Username"
-                            value={deleteUsername}
-                            onChange={(e) => setDeleteUsername(e.target.value)}
-                            className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] sm:text-sm"
-                            required
-                        />
-                        <input
-                            type="password"
-                            placeholder="Password"
-                            value={deletePassword}
-                            onChange={(e) => setDeletePassword(e.target.value)}
-                            className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] sm:text-sm"
-                            required
-                        />
-                    </div>
-                     {deleteError && <p className="mt-3 text-center text-sm text-red-600">{deleteError}</p>}
-                    <div className="mt-6 flex justify-between gap-4">
-                        <button
-                            type="button"
-                            onClick={() => setShowDeleteModal(false)}
-                            className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700"
-                        >
-                            Delete
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
-  }
 
-  if (selectedFile && status === 'idle') {
-    return (
-        <Layout>
-            <div className="w-full max-w-lg mx-auto py-8 px-4 sm:px-6 lg:px-8">
+  const renderMainContent = () => {
+    switch (status) {
+      case 'idle':
+        return <FileUpload onFileSelected={handleFileSelected} onViewHistory={handleViewHistory} onDeleteHistory={handleDeleteHistory} historyVersion={historyVersion} />;
+      
+      case 'project_name':
+        return (
+            <div className="w-full max-w-lg mx-auto">
                 <div className="bg-white rounded-xl shadow-lg p-8">
                     <form onSubmit={handleProjectNameSubmit}>
                         <h2 className="text-2xl font-bold text-[#333333] text-center">Project Name</h2>
@@ -270,14 +215,8 @@ const App: React.FC = () => {
                     </form>
                 </div>
             </div>
-        </Layout>
-    );
-  }
+        );
 
-  const renderContent = () => {
-    switch (status) {
-      case 'idle':
-        return <FileUpload onFileSelected={handleFileSelected} onViewHistory={handleViewHistory} onDeleteHistory={handleDeleteHistory} historyVersion={historyVersion} />;
       case 'enriching':
         return (
           <div className="flex flex-col items-center justify-center text-center p-10 bg-white rounded-lg shadow-md">
@@ -288,12 +227,10 @@ const App: React.FC = () => {
         );
       case 'validating':
          if (!currentClient) return null;
-         return (
-             <ValidationScreen client={currentClient} matches={potentialMatches} searchMethod={currentSearchMethod}
+         return <ValidationScreen client={currentClient} matches={potentialMatches} searchMethod={currentSearchMethod}
                 isLastAttempt={currentSearchIndex === SEARCH_CASCADE.length - 1} onSelectMatch={handleMatchSelected}
                 onReject={handleRejectMatches} onMarkNotValidated={handleMarkAsNotValidated}
-                progress={{ current: currentIndex + 1, total: clients.length }} />
-         );
+                progress={{ current: currentIndex + 1, total: clients.length }} />;
       case 'complete':
         return <ResultsDashboard results={results} clients={clients} onReset={handleReset} isHistoric={isViewingHistory} projectName={projectName} username={username} />;
       case 'error':
@@ -306,15 +243,53 @@ const App: React.FC = () => {
             </button>
           </div>
         );
+      default:
+        return <div>Invalid application state.</div>
     }
   };
 
   return (
-    <Layout>
-      <div className="w-full max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        {renderContent()}
-      </div>
-    </Layout>
+    <>
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-sm">
+                <form onSubmit={handleConfirmDelete}>
+                    <div className="text-center">
+                        <ShieldAlert className="mx-auto h-12 w-12 text-red-500" />
+                        <h3 className="mt-4 text-lg font-medium text-gray-900">Confirm Deletion</h3>
+                        <p className="mt-2 text-sm text-gray-600">
+                            Please enter credentials to permanently delete this report. This action cannot be undone.
+                        </p>
+                    </div>
+                    <div className="mt-6 space-y-4">
+                        <input type="text" placeholder="Username" value={deleteUsername} onChange={(e) => setDeleteUsername(e.target.value)}
+                            className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] sm:text-sm"
+                            required />
+                        <input type="password" placeholder="Password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)}
+                            className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] sm:text-sm"
+                            required />
+                    </div>
+                     {deleteError && <p className="mt-3 text-center text-sm text-red-600">{deleteError}</p>}
+                    <div className="mt-6 flex justify-between gap-4">
+                        <button type="button" onClick={() => setShowDeleteModal(false)}
+                            className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button type="submit" className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700">
+                            Delete
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      )}
+
+      <Layout>
+        <div className="w-full max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+          {renderMainContent()}
+        </div>
+      </Layout>
+    </>
   );
 };
 
