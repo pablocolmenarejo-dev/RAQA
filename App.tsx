@@ -1,3 +1,5 @@
+// /App.tsx
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Client, ValidationResult, AppStatus, SearchMethod, PotentialMatch, ValidationStatusValue } from './types';
 import Layout from './components/Layout';
@@ -6,12 +8,11 @@ import ValidationScreen from './components/ValidationScreen';
 import ResultsDashboard from './components/ResultsDashboard';
 import { enrichClientsWithGeoData, findPotentialMatches } from './services/geminiService';
 import { Loader2 } from 'lucide-react';
-import LoginScreen from './components/LoginScreen'; // <-- 1. Importar el nuevo componente
+import LoginScreen from './components/LoginScreen';
 
 const SEARCH_CASCADE: SearchMethod[] = ['cif', 'street_keyword', 'name_keyword', 'city_broad'];
 
 const App: React.FC = () => {
-  // 2. Añadir estado para la autenticación
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   const [status, setStatus] = useState<AppStatus>('idle');
@@ -21,12 +22,14 @@ const App: React.FC = () => {
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const [potentialMatches, setPotentialMatches] = useState<PotentialMatch[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isViewingHistory, setIsViewingHistory] = useState(false); // Nuevo estado
 
   const currentClient = useMemo(() => clients[currentIndex], [clients, currentIndex]);
   const currentSearchMethod = useMemo(() => SEARCH_CASCADE[currentSearchIndex], [currentSearchIndex]);
 
   const handleFileLoaded = async (loadedClients: Client[]) => {
     if (loadedClients.length > 0) {
+      setIsViewingHistory(false); // Asegurarse de que no estamos en modo historia
       setStatus('enriching');
       setError(null);
       setResults([]);
@@ -46,6 +49,14 @@ const App: React.FC = () => {
       setError("The uploaded file is empty or has an invalid format.");
       setStatus('error');
     }
+  };
+
+  // Función para cargar un informe desde el historial
+  const handleViewHistory = (report: any) => {
+    setClients(report.clients);
+    setResults(report.results);
+    setIsViewingHistory(true);
+    setStatus('complete'); // Ir directamente a la pantalla de resultados
   };
 
   const startSearchForCurrentClient = useCallback(async () => {
@@ -92,6 +103,7 @@ const App: React.FC = () => {
       setCurrentSearchIndex(0);
       setPotentialMatches([]);
     } else {
+      setIsViewingHistory(false); // La validación ha terminado, ya no es histórica
       setStatus('complete');
     }
   };
@@ -127,9 +139,9 @@ const App: React.FC = () => {
     setCurrentIndex(0);
     setCurrentSearchIndex(0);
     setPotentialMatches([]);
+    setIsViewingHistory(false);
   };
 
-  // 3. Renderizar el LoginScreen si el usuario no está autenticado
   if (!isAuthenticated) {
     return <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
@@ -137,7 +149,7 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (status) {
       case 'idle':
-        return <FileUpload onFileLoaded={handleFileLoaded} />;
+        return <FileUpload onFileLoaded={handleFileLoaded} onViewHistory={handleViewHistory} />;
       case 'enriching':
         return (
           <div className="flex flex-col items-center justify-center text-center p-10 bg-white rounded-lg shadow-md">
@@ -163,7 +175,7 @@ const App: React.FC = () => {
              />
          );
       case 'complete':
-        return <ResultsDashboard results={results} clients={clients} onReset={handleReset} />;
+        return <ResultsDashboard results={results} clients={clients} onReset={handleReset} isHistoric={isViewingHistory} />;
       case 'error':
          return (
           <div className="flex flex-col items-center justify-center text-center p-10 bg-white rounded-lg shadow-md border border-red-200">
