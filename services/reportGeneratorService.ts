@@ -14,44 +14,48 @@ export const generatePdfReport = async () => {
   const buttons = reportElement.querySelectorAll('button');
   buttons.forEach(btn => btn.style.visibility = 'hidden');
 
-  const canvas = await html2canvas(reportElement, {
-    scale: 2, // Aumenta la resolución de la captura para mayor calidad
-    useCORS: true,
-    backgroundColor: '#ffffff', // Fondo blanco para la captura
-  });
+  try {
+    const canvas = await html2canvas(reportElement, {
+      scale: 2, // Aumenta la resolución de la captura para mayor calidad
+      useCORS: true,
+      backgroundColor: '#ffffff', // Fondo blanco para la captura
+    });
 
-  // Volver a mostrar los botones
-  buttons.forEach(btn => btn.style.visibility = 'visible');
+    const imgData = canvas.toDataURL('image/png');
 
-  const imgData = canvas.toDataURL('image/png');
+    // **LA CORRECCIÓN CLAVE ESTÁ AQUÍ**
+    // Se accede al constructor jsPDF directamente desde el objeto global window.jspdf
+    const { jsPDF } = (window as any).jspdf;
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
 
-  // Usamos el constructor de jsPDF desde el objeto window para asegurar compatibilidad
-  const doc = new (window as any).jspdf.jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
+    const pdfWidth = doc.internal.pageSize.getWidth();
+    const pdfHeight = doc.internal.pageSize.getHeight();
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+    
+    // Calcular la relación de aspecto para que la imagen no se deforme
+    const ratio = canvasWidth / canvasHeight;
+    const finalHeight = pdfWidth / ratio;
 
-  const pdfWidth = doc.internal.pageSize.getWidth();
-  const pdfHeight = doc.internal.pageSize.getHeight();
-  const canvasWidth = canvas.width;
-  const canvasHeight = canvas.height;
-  
-  // Calcular la relación de aspecto para que la imagen no se deforme
-  const ratio = canvasWidth / canvasHeight;
-  const imgHeight = pdfWidth / ratio;
+    // Comprobamos que la altura no exceda la del PDF para evitar errores
+    const pageHeight = doc.internal.pageSize.getHeight();
+    if (finalHeight > pageHeight) {
+      console.warn("El contenido es más largo que una página A4, puede que se corte.");
+    }
 
-  // Si la altura de la imagen es mayor que la página, se ajustará. 
-  // Para informes muy largos se necesitaría un enfoque de múltiples páginas,
-  // pero para la mayoría de los casos esto es suficiente.
-  let finalHeight = imgHeight;
-  if (imgHeight > pdfHeight) {
-    console.warn("El contenido es más largo que una página A4, puede que se corte.");
-    finalHeight = pdfHeight;
+    doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight > pageHeight ? pageHeight : finalHeight);
+    doc.save('PharmaClient_Validation_Report.pdf');
+
+  } catch (error) {
+    console.error("Error al generar el PDF:", error);
+  } finally {
+    // Asegurarnos de que los botones siempre vuelvan a ser visibles, incluso si hay un error
+    buttons.forEach(btn => btn.style.visibility = 'visible');
   }
-
-  doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight);
-  doc.save('PharmaClient_Validation_Report.pdf');
 };
 
 export const generateExcelReport = (results: ValidationResult[], clients: Client[]) => {
