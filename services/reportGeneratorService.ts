@@ -5,7 +5,7 @@ declare const jsPDF: any;
 declare const XLSX: any;
 
 export const generatePdfReport = (results: ValidationResult[], clients: Client[]) => {
-  const doc = new jsPDF.default();
+  const doc = new jsPDF();
   
   doc.text("PharmaClient Validator - Assisted Validation Report", 14, 20);
   doc.setFontSize(10);
