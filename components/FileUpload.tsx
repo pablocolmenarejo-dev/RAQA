@@ -3,23 +3,20 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Client } from '../types';
-import { UploadCloud, FileCheck2, AlertTriangle, History, Eye, User, FileText, Trash2 } from 'lucide-react';
+import { parseClientFile } from '../services/fileParserService';
+import { UploadCloud, FileCheck2, AlertTriangle, History, Eye } from 'lucide-react';
 
 interface FileUploadProps {
-  onFileSelected: (file: File) => void;
-  onViewHistory: (report: any) => void;
-  // Nueva función para iniciar la eliminación de un informe
-  onDeleteHistory: (reportId: string) => void;
-  // Prop para forzar la recarga del historial
-  historyVersion: number;
+  onFileLoaded: (clients: Client[]) => void;
+  onViewHistory: (report: any) => void; // Nueva función para ver un informe histórico
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory, onDeleteHistory, historyVersion }) => {
+const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded, onViewHistory }) => {
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
 
-  // Ahora el historial se recarga cuando 'historyVersion' cambia
+  // Cargar el historial desde localStorage al montar el componente
   useEffect(() => {
     try {
       const storedHistory = JSON.parse(localStorage.getItem('validationHistory') || '[]');
@@ -28,17 +25,26 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory, 
       console.error("Error cargando historial:", error);
       setHistory([]);
     }
-  }, [historyVersion]);
+  }, []);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setError(null);
     setFileName(null);
     const file = acceptedFiles[0];
     if (file) {
-      setFileName(file.name);
-      onFileSelected(file);
+      try {
+        const clients = await parseClientFile(file);
+        setFileName(file.name);
+        onFileLoaded(clients);
+      } catch (err) {
+        if (err instanceof Error) {
+            setError(err.message);
+        } else {
+            setError('An unknown error occurred while parsing the file.');
+        }
+      }
     }
-  }, [onFileSelected]);
+  }, [onFileLoaded]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -52,7 +58,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory, 
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-3xl mx-auto">
-      {/* ... (la sección de carga de archivos no cambia) ... */}
       <div className="text-center">
         <h2 className="text-2xl font-bold text-[#333333]">Upload Client List</h2>
         <p className="mt-2 text-gray-700">
@@ -83,7 +88,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory, 
       {fileName && !error && (
         <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center space-x-3">
           <FileCheck2 className="h-5 w-5 text-green-600" />
-          <p className="text-sm font-medium text-green-800">File selected: {fileName}. Enter project name to continue.</p>
+          <p className="text-sm font-medium text-green-800">File uploaded: {fileName}</p>
         </div>
       )}
       
@@ -114,36 +119,17 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory, 
             <ul className="divide-y divide-gray-200">
               {history.map((report) => (
                 <li key={report.id} className="p-4 flex justify-between items-center">
-                  <div className="space-y-1">
-                    <p className="font-bold text-gray-800">{report.projectName || 'General Report'}</p>
-                    <div className="flex items-center text-sm text-gray-500">
-                        <FileText className="h-4 w-4 mr-2" />
-                        <span>{`${report.clientCount} clients processed on ${report.date}`}</span>
-                    </div>
-                    {report.username && (
-                        <div className="flex items-center text-sm text-gray-500">
-                            <User className="h-4 w-4 mr-2" />
-                            <span>Validated by: {report.username}</span>
-                        </div>
-                    )}
+                  <div>
+                    <p className="font-medium text-gray-800">{`Report from: ${report.date}`}</p>
+                    <p className="text-sm text-gray-500">{`${report.clientCount} clients processed`}</p>
                   </div>
-                  <div className="flex">
-                    <button
-                      onClick={() => onViewHistory(report)}
-                      className="flex items-center justify-center bg-[#00338D] text-white font-semibold py-2 px-3 rounded-lg hover:brightness-90 transition-all text-sm"
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      View
-                    </button>
-                    {/* Botón de eliminar */}
-                    <button
-                        onClick={() => onDeleteHistory(report.id)}
-                        className="ml-2 flex items-center justify-center bg-red-600 text-white font-semibold py-2 px-3 rounded-lg hover:bg-red-700 transition-all text-sm"
-                    >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => onViewHistory(report)}
+                    className="flex items-center justify-center bg-[#00338D] text-white font-semibold py-2 px-3 rounded-lg hover:brightness-90 transition-all text-sm"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View
+                  </button>
                 </li>
               ))}
             </ul>
