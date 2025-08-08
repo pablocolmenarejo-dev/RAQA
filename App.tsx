@@ -6,10 +6,14 @@ import ValidationScreen from './components/ValidationScreen';
 import ResultsDashboard from './components/ResultsDashboard';
 import { enrichClientsWithGeoData, findPotentialMatches } from './services/geminiService';
 import { Loader2 } from 'lucide-react';
+import LoginScreen from './components/LoginScreen'; // <-- 1. Importar el nuevo componente
 
 const SEARCH_CASCADE: SearchMethod[] = ['cif', 'street_keyword', 'name_keyword', 'city_broad'];
 
 const App: React.FC = () => {
+  // 2. Añadir estado para la autenticación
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
   const [status, setStatus] = useState<AppStatus>('idle');
   const [clients, setClients] = useState<Client[]>([]);
   const [results, setResults] = useState<ValidationResult[]>([]);
@@ -47,9 +51,7 @@ const App: React.FC = () => {
   const startSearchForCurrentClient = useCallback(async () => {
     if (!currentClient || status !== 'validating') return;
     
-    // Skip search if CIF is the method but not available
     if (currentSearchMethod === 'cif' && !currentClient.CIF_NIF) {
-        // Move to the next search method immediately
         setCurrentSearchIndex(prev => prev + 1);
         return;
     }
@@ -70,7 +72,6 @@ const App: React.FC = () => {
     }
   }, [status, currentIndex, clients.length, startSearchForCurrentClient]);
   
-  // Effect to handle moving to next search method
   useEffect(() => {
      if (status === 'validating' && currentIndex < clients.length && currentSearchIndex < SEARCH_CASCADE.length) {
          startSearchForCurrentClient();
@@ -109,10 +110,7 @@ const App: React.FC = () => {
   const handleRejectMatches = () => {
     if (currentSearchIndex < SEARCH_CASCADE.length - 1) {
       setCurrentSearchIndex(prev => prev + 1);
-      setPotentialMatches([]); // Clear old matches
-    } else {
-      // This case is now handled by a dedicated button in ValidationScreen
-      // If all search methods are exhausted, the user must explicitly mark as Not Validated.
+      setPotentialMatches([]);
     }
   };
 
@@ -131,6 +129,11 @@ const App: React.FC = () => {
     setPotentialMatches([]);
   };
 
+  // 3. Renderizar el LoginScreen si el usuario no está autenticado
+  if (!isAuthenticated) {
+    return <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
   const renderContent = () => {
     switch (status) {
       case 'idle':
@@ -146,7 +149,7 @@ const App: React.FC = () => {
           </div>
         );
       case 'validating':
-         if (!currentClient) return null; // Or a loading state
+         if (!currentClient) return null;
          return (
              <ValidationScreen
                 client={currentClient}
