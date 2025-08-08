@@ -1,0 +1,6 @@
+
+{
+  "name": "PharmaClient Validator",
+  "description": "An assisted validation tool for pharmaceutical labs. It enriches client data, runs intelligent searches against public Spanish databases, and presents potential matches for final user validation, ensuring GDP compliance.",
+  "requestFramePermissions": []
+}
