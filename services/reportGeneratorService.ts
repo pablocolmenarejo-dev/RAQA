@@ -1,52 +1,57 @@
-import { Client, ValidationResult, ValidationStatusValue } from '../types';
+import { Client, ValidationResult } from '../types';
 
 declare const XLSX: any;
+declare const html2canvas: any;
 
-// La declaración de jsPDF no es necesaria aquí, ya que accederemos a ella a través del objeto window.
+export const generatePdfReport = async () => {
+  const reportElement = document.getElementById('report-content');
+  if (!reportElement) {
+    console.error("No se pudo encontrar el elemento del informe para capturar.");
+    return;
+  }
 
-export const generatePdfReport = (results: ValidationResult[], clients: Client[]) => {
-  // Corrección 1: Instanciar jsPDF correctamente desde el objeto window.
-  // La librería cargada por CDN adjunta su constructor al objeto `window.jspdf.jsPDF`.
-  const doc = new (window as any).jspdf.jsPDF();
+  // Ocultar los botones temporalmente para que no aparezcan en la captura
+  const buttons = reportElement.querySelectorAll('button');
+  buttons.forEach(btn => btn.style.visibility = 'hidden');
 
-  doc.text("PharmaClient Validator - Assisted Validation Report", 14, 20);
-  doc.setFontSize(10);
-  doc.text(`Report generated on: ${new Date().toLocaleString()}`, 14, 26);
-
-  const statusCounts = results.reduce((acc, result) => {
-    acc[result.status] = (acc[result.status] || 0) + 1;
-    return acc;
-  }, {} as Record<ValidationStatusValue, number>);
-
-  let summaryText = 'Summary:\n';
-  Object.entries(statusCounts).forEach(([status, count]) => {
-    summaryText += `- ${status}: ${count}\n`;
-  });
-  doc.text(summaryText, 14, 40);
-
-  const clientMap = new Map(clients.map(c => [c.id, c]));
-  const tableColumn = ["Client Info", "Final Status", "Details"];
-  const tableRows: (string | undefined)[][] = [];
-
-  results.forEach(result => {
-    const client = clientMap.get(result.clientId);
-    const row = [
-      client?.INFO_1 || client?.INFO_2 || `Client #${client?.id}`,
-      result.status,
-      result.reason
-    ];
-    tableRows.push(row);
+  const canvas = await html2canvas(reportElement, {
+    scale: 2, // Aumenta la resolución de la captura para mayor calidad
+    useCORS: true,
+    backgroundColor: '#ffffff', // Fondo blanco para la captura
   });
 
-  // Corrección 2: Llamar al método autoTable correctamente para la versión de CDN.
-  // Se debe pasar la instancia 'doc' como primer argumento y usar los parámetros 'head' y 'body'.
-  (window as any).jspdf.autoTable(doc, {
-    head: [tableColumn],
-    body: tableRows,
-    startY: 60,
+  // Volver a mostrar los botones
+  buttons.forEach(btn => btn.style.visibility = 'visible');
+
+  const imgData = canvas.toDataURL('image/png');
+
+  // Usamos el constructor de jsPDF desde el objeto window para asegurar compatibilidad
+  const doc = new (window as any).jspdf.jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
   });
 
-  doc.save("PharmaClient_Validation_Report.pdf");
+  const pdfWidth = doc.internal.pageSize.getWidth();
+  const pdfHeight = doc.internal.pageSize.getHeight();
+  const canvasWidth = canvas.width;
+  const canvasHeight = canvas.height;
+  
+  // Calcular la relación de aspecto para que la imagen no se deforme
+  const ratio = canvasWidth / canvasHeight;
+  const imgHeight = pdfWidth / ratio;
+
+  // Si la altura de la imagen es mayor que la página, se ajustará. 
+  // Para informes muy largos se necesitaría un enfoque de múltiples páginas,
+  // pero para la mayoría de los casos esto es suficiente.
+  let finalHeight = imgHeight;
+  if (imgHeight > pdfHeight) {
+    console.warn("El contenido es más largo que una página A4, puede que se corte.");
+    finalHeight = pdfHeight;
+  }
+
+  doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight);
+  doc.save('PharmaClient_Validation_Report.pdf');
 };
 
 export const generateExcelReport = (results: ValidationResult[], clients: Client[]) => {
