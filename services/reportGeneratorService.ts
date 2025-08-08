@@ -1,12 +1,14 @@
-
 import { Client, ValidationResult, ValidationStatusValue } from '../types';
 
-declare const jsPDF: any;
 declare const XLSX: any;
 
+// La declaración de jsPDF no es necesaria aquí, ya que accederemos a ella a través del objeto window.
+
 export const generatePdfReport = (results: ValidationResult[], clients: Client[]) => {
-  const doc = new jsPDF();
-  
+  // Corrección 1: Instanciar jsPDF correctamente desde el objeto window.
+  // La librería cargada por CDN adjunta su constructor al objeto `window.jspdf.jsPDF`.
+  const doc = new (window as any).jspdf.jsPDF();
+
   doc.text("PharmaClient Validator - Assisted Validation Report", 14, 20);
   doc.setFontSize(10);
   doc.text(`Report generated on: ${new Date().toLocaleString()}`, 14, 26);
@@ -15,7 +17,7 @@ export const generatePdfReport = (results: ValidationResult[], clients: Client[]
     acc[result.status] = (acc[result.status] || 0) + 1;
     return acc;
   }, {} as Record<ValidationStatusValue, number>);
-  
+
   let summaryText = 'Summary:\n';
   Object.entries(statusCounts).forEach(([status, count]) => {
     summaryText += `- ${status}: ${count}\n`;
@@ -24,7 +26,7 @@ export const generatePdfReport = (results: ValidationResult[], clients: Client[]
 
   const clientMap = new Map(clients.map(c => [c.id, c]));
   const tableColumn = ["Client Info", "Final Status", "Details"];
-  const tableRows: (string|undefined)[][] = [];
+  const tableRows: (string | undefined)[][] = [];
 
   results.forEach(result => {
     const client = clientMap.get(result.clientId);
@@ -36,7 +38,14 @@ export const generatePdfReport = (results: ValidationResult[], clients: Client[]
     tableRows.push(row);
   });
 
-  doc.autoTable(tableColumn, tableRows, { startY: 60 });
+  // Corrección 2: Llamar al método autoTable correctamente para la versión de CDN.
+  // Se debe pasar la instancia 'doc' como primer argumento y usar los parámetros 'head' y 'body'.
+  (window as any).jspdf.autoTable(doc, {
+    head: [tableColumn],
+    body: tableRows,
+    startY: 60,
+  });
+
   doc.save("PharmaClient_Validation_Report.pdf");
 };
 
