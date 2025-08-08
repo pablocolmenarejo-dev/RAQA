@@ -3,19 +3,23 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Client } from '../types';
-import { UploadCloud, FileCheck2, AlertTriangle, History, Eye, User, FileText } from 'lucide-react';
+import { UploadCloud, FileCheck2, AlertTriangle, History, Eye, User, FileText, Trash2 } from 'lucide-react';
 
 interface FileUploadProps {
-  // Cambiamos onFileLoaded por onFileSelected para manejar el flujo de "nombre de proyecto"
   onFileSelected: (file: File) => void;
   onViewHistory: (report: any) => void;
+  // Nueva función para iniciar la eliminación de un informe
+  onDeleteHistory: (reportId: string) => void;
+  // Prop para forzar la recarga del historial
+  historyVersion: number;
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory }) => {
+const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory, onDeleteHistory, historyVersion }) => {
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
 
+  // Ahora el historial se recarga cuando 'historyVersion' cambia
   useEffect(() => {
     try {
       const storedHistory = JSON.parse(localStorage.getItem('validationHistory') || '[]');
@@ -24,7 +28,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory }
       console.error("Error cargando historial:", error);
       setHistory([]);
     }
-  }, []);
+  }, [historyVersion]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setError(null);
@@ -32,7 +36,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory }
     const file = acceptedFiles[0];
     if (file) {
       setFileName(file.name);
-      onFileSelected(file); // En lugar de procesar, ahora solo notificamos a App.tsx
+      onFileSelected(file);
     }
   }, [onFileSelected]);
 
@@ -48,6 +52,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory }
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-3xl mx-auto">
+      {/* ... (la sección de carga de archivos no cambia) ... */}
       <div className="text-center">
         <h2 className="text-2xl font-bold text-[#333333]">Upload Client List</h2>
         <p className="mt-2 text-gray-700">
@@ -98,6 +103,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory }
         </ul>
       </div>
 
+      {/* --- SECCIÓN DE HISTORIAL --- */}
       {history.length > 0 && (
         <div className="mt-8">
           <div className="flex items-center mb-4">
@@ -121,13 +127,23 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory }
                         </div>
                     )}
                   </div>
-                  <button
-                    onClick={() => onViewHistory(report)}
-                    className="flex items-center justify-center bg-[#00338D] text-white font-semibold py-2 px-3 rounded-lg hover:brightness-90 transition-all text-sm"
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    View
-                  </button>
+                  <div className="flex">
+                    <button
+                      onClick={() => onViewHistory(report)}
+                      className="flex items-center justify-center bg-[#00338D] text-white font-semibold py-2 px-3 rounded-lg hover:brightness-90 transition-all text-sm"
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      View
+                    </button>
+                    {/* Botón de eliminar */}
+                    <button
+                        onClick={() => onDeleteHistory(report.id)}
+                        className="ml-2 flex items-center justify-center bg-red-600 text-white font-semibold py-2 px-3 rounded-lg hover:bg-red-700 transition-all text-sm"
+                    >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
