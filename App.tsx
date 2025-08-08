@@ -44,7 +44,7 @@ const App: React.FC = () => {
   
   const handleFileSelected = (file: File) => {
     setSelectedFile(file);
-    setStatus('project_name'); // Nuevo estado para pedir el nombre del proyecto
+    setStatus('project_name');
   };
 
   const handleProjectNameSubmit = async (e: React.FormEvent) => {
@@ -183,12 +183,6 @@ const App: React.FC = () => {
     setSelectedFile(null); setProjectName('');
   };
   
-  // --- Renderizado Lógico Principal ---
-
-  if (!isAuthenticated) {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
-  }
-
   const renderMainContent = () => {
     switch (status) {
       case 'idle':
@@ -244,13 +238,15 @@ const App: React.FC = () => {
           </div>
         );
       default:
-        return <div>Invalid application state.</div>
+        // Caso por defecto para evitar pantallas en blanco si el estado es inválido
+        return <div className="text-center text-red-500">Error: Invalid application state. Please refresh the page.</div>
     }
   };
+  
+  const renderDeleteModal = () => {
+    if (!showDeleteModal) return null;
 
-  return (
-    <>
-      {showDeleteModal && (
+    return (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-sm">
                 <form onSubmit={handleConfirmDelete}>
@@ -282,8 +278,17 @@ const App: React.FC = () => {
                 </form>
             </div>
         </div>
-      )}
+    );
+  }
 
+  // Renderizado final
+  if (!isAuthenticated) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  return (
+    <>
+      {renderDeleteModal()}
       <Layout>
         <div className="w-full max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
           {renderMainContent()}
