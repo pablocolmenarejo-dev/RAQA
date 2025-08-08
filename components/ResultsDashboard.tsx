@@ -1,4 +1,6 @@
-import React from 'react';
+// /components/ResultsDashboard.tsx
+
+import React, { useEffect } from 'react';
 import { Client, ValidationResult, ValidationStatusValue } from '../types';
 import ClientTable from './ClientTable';
 import { generatePdfReport, generateExcelReport } from '../services/reportGeneratorService';
@@ -8,11 +10,42 @@ interface ResultsDashboardProps {
   results: ValidationResult[];
   clients: Client[];
   onReset: () => void;
+  isHistoric: boolean; // Nuevo prop para saber si es un informe histórico
 }
 
-const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, onReset }) => {
+const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, onReset, isHistoric }) => {
+
+  // Guardar el informe en localStorage cuando se muestre
+  useEffect(() => {
+    // Solo guardar si NO es un informe histórico (es decir, es un nuevo resultado)
+    if (!isHistoric) {
+      try {
+        const reportId = `validation-${new Date().toISOString()}`;
+        const newReport = {
+          id: reportId,
+          date: new Date().toLocaleString(),
+          clientCount: clients.length,
+          results,
+          clients,
+        };
+
+        const history = JSON.parse(localStorage.getItem('validationHistory') || '[]');
+        history.unshift(newReport); // Añadir al principio
+        
+        // Limitar el historial a las últimas 10 entradas para no saturar
+        if (history.length > 10) {
+          history.pop();
+        }
+
+        localStorage.setItem('validationHistory', JSON.stringify(history));
+
+      } catch (error) {
+        console.error("Error guardando el historial de validación:", error);
+      }
+    }
+  }, [results, clients, isHistoric]); // Se ejecuta cuando los resultados cambian
+
   const handleDownloadPdf = () => {
-    // Ya no necesita argumentos, llamará a la nueva función de captura
     generatePdfReport();
   };
 
@@ -32,12 +65,11 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, o
   ];
 
   return (
-    // Se ha añadido el id="report-content" aquí para marcar todo el div para la captura
     <div className="space-y-6" id="report-content">
       <div className="bg-white p-6 rounded-xl shadow-lg">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
             <div>
-                <h2 className="text-2xl font-bold text-[#333333]">Validation Complete</h2>
+                <h2 className="text-2xl font-bold text-[#333333]">{isHistoric ? "Historical Report" : "Validation Complete"}</h2>
                 <p className="text-gray-700 mt-1">Review the final results for the {clients.length} clients processed.</p>
             </div>
             <div className="flex items-center space-x-3 mt-4 md:mt-0">
@@ -46,7 +78,8 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, o
                     className="flex items-center justify-center bg-white text-gray-700 font-semibold py-2 px-4 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors"
                 >
                     <RotateCcw className="h-4 w-4 mr-2" />
-                    Start New Validation
+                    {/* El texto del botón cambia según el contexto */}
+                    {isHistoric ? "Back to Start" : "Start New Validation"}
                 </button>
                 <button
                     onClick={handleDownloadPdf}
