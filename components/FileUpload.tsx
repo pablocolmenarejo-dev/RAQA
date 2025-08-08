@@ -1,16 +1,31 @@
-import React, { useState, useCallback } from 'react';
+// /components/FileUpload.tsx
+
+import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Client } from '../types';
 import { parseClientFile } from '../services/fileParserService';
-import { UploadCloud, FileCheck2, AlertTriangle } from 'lucide-react';
+import { UploadCloud, FileCheck2, AlertTriangle, History, Eye } from 'lucide-react';
 
 interface FileUploadProps {
   onFileLoaded: (clients: Client[]) => void;
+  onViewHistory: (report: any) => void; // Nueva función para ver un informe histórico
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded }) => {
+const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded, onViewHistory }) => {
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
+
+  // Cargar el historial desde localStorage al montar el componente
+  useEffect(() => {
+    try {
+      const storedHistory = JSON.parse(localStorage.getItem('validationHistory') || '[]');
+      setHistory(storedHistory);
+    } catch (error) {
+      console.error("Error cargando historial:", error);
+      setHistory([]);
+    }
+  }, []);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setError(null);
@@ -88,13 +103,39 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded }) => {
         <h4 className="font-semibold text-[#333333]">Required File Format</h4>
         <p className="text-sm text-gray-700 mt-1">Ensure your file contains these columns:</p>
         <ul className="list-disc list-inside mt-2 text-sm text-gray-700 space-y-1">
-            <li><code className="bg-gray-200 p-1 rounded">STREET</code>: Street name for searching (e.g., "Valcorchero")</li>
-            <li><code className="bg-gray-200 p-1 rounded">CITY</code>: City for searching (e.g., "Plasencia")</li>
-            <li><code className="bg-gray-200 p-1 rounded">INFO_1</code> (Optional): Client Name (e.g., "Hospital Virgen del Puerto")</li>
-            <li><code className="bg-gray-200 p-1 rounded">INFO_2</code> (Optional): Full address for display</li>
-            <li><code className="bg-gray-200 p-1 rounded">CIF_NIF</code> (Optional): Tax ID for precise search</li>
+            <li><code className="bg-gray-200 p-1 rounded">STREET</code>, <code className="bg-gray-200 p-1 rounded">CITY</code> (Required)</li>
+            <li><code className="bg-gray-200 p-1 rounded">INFO_1</code>, <code className="bg-gray-200 p-1 rounded">INFO_2</code>, <code className="bg-gray-200 p-1 rounded">CIF_NIF</code> (Optional)</li>
         </ul>
       </div>
+
+      {/* --- SECCIÓN DE HISTORIAL --- */}
+      {history.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center mb-4">
+            <History className="h-6 w-6 mr-3 text-gray-600" />
+            <h3 className="text-xl font-semibold text-[#333333]">Validation History</h3>
+          </div>
+          <div className="bg-white border rounded-lg overflow-hidden">
+            <ul className="divide-y divide-gray-200">
+              {history.map((report) => (
+                <li key={report.id} className="p-4 flex justify-between items-center">
+                  <div>
+                    <p className="font-medium text-gray-800">{`Report from: ${report.date}`}</p>
+                    <p className="text-sm text-gray-500">{`${report.clientCount} clients processed`}</p>
+                  </div>
+                  <button
+                    onClick={() => onViewHistory(report)}
+                    className="flex items-center justify-center bg-[#00338D] text-white font-semibold py-2 px-3 rounded-lg hover:brightness-90 transition-all text-sm"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
