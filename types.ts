@@ -1,7 +1,9 @@
+// /types.ts
 
 export type ValidationStatusValue = "Validado" | "No Validado" | "Pendiente de Revisión";
 
-export type AppStatus = 'idle' | 'enriching' | 'validating' | 'complete' | 'error';
+// Se añade 'project_name' a los estados posibles de la aplicación
+export type AppStatus = 'idle' | 'enriching' | 'validating' | 'complete' | 'error' | 'project_name';
 
 export type SearchMethod = 'cif' | 'street_keyword' | 'name_keyword' | 'city_broad';
 
