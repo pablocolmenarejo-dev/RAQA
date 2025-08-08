@@ -48,7 +48,7 @@ export const generatePdfReport = async () => {
     }
 
     doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight > pageHeight ? pageHeight : finalHeight);
-    doc.save('PharmaClient_Validation_Report.pdf');
+    doc.save('Meisys_Client_Validation_Report.pdf');
 
   } catch (error) {
     console.error("Error al generar el PDF:", error);
@@ -85,5 +85,5 @@ export const generateExcelReport = (results: ValidationResult[], clients: Client
   const ws = XLSX.utils.json_to_sheet(dataForSheet);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Validation Results");
-  XLSX.writeFile(wb, "PharmaClient_Validation_Details.xlsx");
+  XLSX.writeFile(wb, "Meisys_Client_Validation_Report.xlsx");
 };
