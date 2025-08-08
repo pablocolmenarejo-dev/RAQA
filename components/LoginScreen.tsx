@@ -2,10 +2,10 @@
 
 import React, { useState } from 'react';
 import { LogIn } from 'lucide-react';
-// Ya no necesitamos el fonendoscopio de lucide-react
 
 interface LoginScreenProps {
-  onLoginSuccess: () => void;
+  // La función ahora aceptará el nombre de usuario como argumento
+  onLoginSuccess: (username: string) => void;
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
@@ -18,9 +18,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (username === HARDCODED_USERNAME && password === HARDCODED_PASSWORD) {
+    if (username.toLowerCase() === HARDCODED_USERNAME && password === HARDCODED_PASSWORD) {
       setError(null);
-      onLoginSuccess();
+      // Pasamos el nombre de usuario al iniciar sesión con éxito
+      onLoginSuccess(username);
     } else {
       setError('Usuario o contraseña incorrectos.');
     }
@@ -30,10 +31,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-xl shadow-lg">
         <div className="flex flex-col items-center">
-            {/* Logo de Meisys */}
             <img src="/meisys-logo.webp" alt="Meisys Logo" className="h-12 w-auto" />
-
-            {/* Nuevo nombre de la aplicación */}
             <h1 className="mt-4 text-2xl font-bold text-center text-[#333333]">
                 Meisys Client Validator
             </h1>
@@ -48,6 +46,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 name="username"
                 type="text"
                 required
+                autoComplete="username"
                 className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] focus:z-10 sm:text-sm"
                 placeholder="Usuario"
                 value={username}
@@ -61,6 +60,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 name="password"
                 type="password"
                 required
+                autoComplete="current-password"
                 className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] focus:z-10 sm:text-sm"
                 placeholder="Contraseña"
                 value={password}
