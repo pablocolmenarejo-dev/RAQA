@@ -10,14 +10,15 @@ interface ResultsDashboardProps {
   results: ValidationResult[];
   clients: Client[];
   onReset: () => void;
-  isHistoric: boolean; // Nuevo prop para saber si es un informe histórico
+  isHistoric: boolean;
+  // Nuevos props para el nombre de proyecto y usuario
+  projectName?: string;
+  username?: string;
 }
 
-const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, onReset, isHistoric }) => {
+const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, onReset, isHistoric, projectName, username }) => {
 
-  // Guardar el informe en localStorage cuando se muestre
   useEffect(() => {
-    // Solo guardar si NO es un informe histórico (es decir, es un nuevo resultado)
     if (!isHistoric) {
       try {
         const reportId = `validation-${new Date().toISOString()}`;
@@ -25,14 +26,15 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, o
           id: reportId,
           date: new Date().toLocaleString(),
           clientCount: clients.length,
+          projectName: projectName || "Untitled Project", // Guardar nombre del proyecto
+          username: username, // Guardar usuario
           results,
           clients,
         };
 
         const history = JSON.parse(localStorage.getItem('validationHistory') || '[]');
-        history.unshift(newReport); // Añadir al principio
+        history.unshift(newReport);
         
-        // Limitar el historial a las últimas 10 entradas para no saturar
         if (history.length > 10) {
           history.pop();
         }
@@ -43,7 +45,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, o
         console.error("Error guardando el historial de validación:", error);
       }
     }
-  }, [results, clients, isHistoric]); // Se ejecuta cuando los resultados cambian
+  }, [results, clients, isHistoric, projectName, username]);
 
   const handleDownloadPdf = () => {
     generatePdfReport();
@@ -69,7 +71,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, o
       <div className="bg-white p-6 rounded-xl shadow-lg">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
             <div>
-                <h2 className="text-2xl font-bold text-[#333333]">{isHistoric ? "Historical Report" : "Validation Complete"}</h2>
+                <h2 className="text-2xl font-bold text-[#333333]">{projectName || (isHistoric ? "Historical Report" : "Validation Complete")}</h2>
                 <p className="text-gray-700 mt-1">Review the final results for the {clients.length} clients processed.</p>
             </div>
             <div className="flex items-center space-x-3 mt-4 md:mt-0">
@@ -78,7 +80,6 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, o
                     className="flex items-center justify-center bg-white text-gray-700 font-semibold py-2 px-4 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors"
                 >
                     <RotateCcw className="h-4 w-4 mr-2" />
-                    {/* El texto del botón cambia según el contexto */}
                     {isHistoric ? "Back to Start" : "Start New Validation"}
                 </button>
                 <button
