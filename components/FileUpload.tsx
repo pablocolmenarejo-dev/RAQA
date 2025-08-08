@@ -3,20 +3,19 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Client } from '../types';
-import { parseClientFile } from '../services/fileParserService';
-import { UploadCloud, FileCheck2, AlertTriangle, History, Eye } from 'lucide-react';
+import { UploadCloud, FileCheck2, AlertTriangle, History, Eye, User, FileText } from 'lucide-react';
 
 interface FileUploadProps {
-  onFileLoaded: (clients: Client[]) => void;
-  onViewHistory: (report: any) => void; // Nueva función para ver un informe histórico
+  // Cambiamos onFileLoaded por onFileSelected para manejar el flujo de "nombre de proyecto"
+  onFileSelected: (file: File) => void;
+  onViewHistory: (report: any) => void;
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded, onViewHistory }) => {
+const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, onViewHistory }) => {
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
 
-  // Cargar el historial desde localStorage al montar el componente
   useEffect(() => {
     try {
       const storedHistory = JSON.parse(localStorage.getItem('validationHistory') || '[]');
@@ -32,19 +31,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded, onViewHistory }) 
     setFileName(null);
     const file = acceptedFiles[0];
     if (file) {
-      try {
-        const clients = await parseClientFile(file);
-        setFileName(file.name);
-        onFileLoaded(clients);
-      } catch (err) {
-        if (err instanceof Error) {
-            setError(err.message);
-        } else {
-            setError('An unknown error occurred while parsing the file.');
-        }
-      }
+      setFileName(file.name);
+      onFileSelected(file); // En lugar de procesar, ahora solo notificamos a App.tsx
     }
-  }, [onFileLoaded]);
+  }, [onFileSelected]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -88,7 +78,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded, onViewHistory }) 
       {fileName && !error && (
         <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center space-x-3">
           <FileCheck2 className="h-5 w-5 text-green-600" />
-          <p className="text-sm font-medium text-green-800">File uploaded: {fileName}</p>
+          <p className="text-sm font-medium text-green-800">File selected: {fileName}. Enter project name to continue.</p>
         </div>
       )}
       
@@ -108,7 +98,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded, onViewHistory }) 
         </ul>
       </div>
 
-      {/* --- SECCIÓN DE HISTORIAL --- */}
       {history.length > 0 && (
         <div className="mt-8">
           <div className="flex items-center mb-4">
@@ -119,9 +108,18 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileLoaded, onViewHistory }) 
             <ul className="divide-y divide-gray-200">
               {history.map((report) => (
                 <li key={report.id} className="p-4 flex justify-between items-center">
-                  <div>
-                    <p className="font-medium text-gray-800">{`Report from: ${report.date}`}</p>
-                    <p className="text-sm text-gray-500">{`${report.clientCount} clients processed`}</p>
+                  <div className="space-y-1">
+                    <p className="font-bold text-gray-800">{report.projectName || 'General Report'}</p>
+                    <div className="flex items-center text-sm text-gray-500">
+                        <FileText className="h-4 w-4 mr-2" />
+                        <span>{`${report.clientCount} clients processed on ${report.date}`}</span>
+                    </div>
+                    {report.username && (
+                        <div className="flex items-center text-sm text-gray-500">
+                            <User className="h-4 w-4 mr-2" />
+                            <span>Validated by: {report.username}</span>
+                        </div>
+                    )}
                   </div>
                   <button
                     onClick={() => onViewHistory(report)}
