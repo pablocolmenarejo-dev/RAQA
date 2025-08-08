@@ -1,3 +1,5 @@
+// /App.tsx
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Client, ValidationResult, AppStatus, SearchMethod, PotentialMatch, ValidationStatusValue } from './types';
 import Layout from './components/Layout';
@@ -5,14 +7,15 @@ import FileUpload from './components/FileUpload';
 import ValidationScreen from './components/ValidationScreen';
 import ResultsDashboard from './components/ResultsDashboard';
 import { enrichClientsWithGeoData, findPotentialMatches } from './services/geminiService';
-import { Loader2 } from 'lucide-react';
-import LoginScreen from './components/LoginScreen'; // <-- 1. Importar el nuevo componente
+import { parseClientFile } from './services/fileParserService';
+import { Loader2, FileText } from 'lucide-react';
+import LoginScreen from './components/LoginScreen';
 
 const SEARCH_CASCADE: SearchMethod[] = ['cif', 'street_keyword', 'name_keyword', 'city_broad'];
 
 const App: React.FC = () => {
-  // 2. Añadir estado para la autenticación
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState<string>('');
   
   const [status, setStatus] = useState<AppStatus>('idle');
   const [clients, setClients] = useState<Client[]>([]);
@@ -21,31 +24,62 @@ const App: React.FC = () => {
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const [potentialMatches, setPotentialMatches] = useState<PotentialMatch[]>([]);
   const [error, setError] = useState<string | null>(null);
+  
+  const [isViewingHistory, setIsViewingHistory] = useState(false);
+  const [projectName, setProjectName] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const currentClient = useMemo(() => clients[currentIndex], [clients, currentIndex]);
   const currentSearchMethod = useMemo(() => SEARCH_CASCADE[currentSearchIndex], [currentSearchIndex]);
 
-  const handleFileLoaded = async (loadedClients: Client[]) => {
-    if (loadedClients.length > 0) {
-      setStatus('enriching');
-      setError(null);
-      setResults([]);
-      setClients([]);
-      try {
-        const enrichedClients = await enrichClientsWithGeoData(loadedClients);
-        setClients(enrichedClients);
-        const initialResults = enrichedClients.map(c => ({ clientId: c.id, status: 'Pendiente de Revisión' as const, reason: 'Not yet processed.' }));
-        setResults(initialResults);
-        setStatus('validating');
-        setCurrentIndex(0);
-        setCurrentSearchIndex(0);
-      } catch (err) {
-        handleProcessingError(err, "Failed to enrich client data.");
-      }
-    } else {
-      setError("The uploaded file is empty or has an invalid format.");
-      setStatus('error');
+  const handleLoginSuccess = (user: string) => {
+    setUsername(user);
+    setIsAuthenticated(true);
+  };
+  
+  const handleFileSelected = (file: File) => {
+    setSelectedFile(file);
+  };
+
+  const handleProjectNameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectName.trim() || !selectedFile) {
+        setError("Project name is required.");
+        return;
     }
+    await processFile(selectedFile);
+  };
+  
+  const processFile = async (file: File) => {
+    setIsViewingHistory(false);
+    setStatus('enriching');
+    setError(null);
+    setResults([]);
+    setClients([]);
+    
+    try {
+      const loadedClients = await parseClientFile(file);
+      if (loadedClients.length === 0) {
+          throw new Error("The file is empty or has an invalid format.");
+      }
+      const enrichedClients = await enrichClientsWithGeoData(loadedClients);
+      setClients(enrichedClients);
+      const initialResults = enrichedClients.map(c => ({ clientId: c.id, status: 'Pendiente de Revisión' as const, reason: 'Not yet processed.' }));
+      setResults(initialResults);
+      setStatus('validating');
+      setCurrentIndex(0);
+      setCurrentSearchIndex(0);
+    } catch (err) {
+      handleProcessingError(err, "Failed to process file.");
+    }
+  };
+
+  const handleViewHistory = (report: any) => {
+    setClients(report.clients);
+    setResults(report.results);
+    setProjectName(report.projectName); // Cargar nombre de proyecto histórico
+    setIsViewingHistory(true);
+    setStatus('complete');
   };
 
   const startSearchForCurrentClient = useCallback(async () => {
@@ -84,6 +118,8 @@ const App: React.FC = () => {
     const errorMessage = err instanceof Error ? err.message : defaultMessage;
     setError(errorMessage);
     setStatus('error');
+    setSelectedFile(null); // Limpiar archivo en caso de error
+    setProjectName('');
   };
 
   const advanceToNext = () => {
@@ -92,6 +128,7 @@ const App: React.FC = () => {
       setCurrentSearchIndex(0);
       setPotentialMatches([]);
     } else {
+      setIsViewingHistory(false);
       setStatus('complete');
     }
   };
@@ -127,24 +164,61 @@ const App: React.FC = () => {
     setCurrentIndex(0);
     setCurrentSearchIndex(0);
     setPotentialMatches([]);
+    setIsViewingHistory(false);
+    setSelectedFile(null);
+    setProjectName('');
   };
 
-  // 3. Renderizar el LoginScreen si el usuario no está autenticado
   if (!isAuthenticated) {
-    return <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />;
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // Si se ha seleccionado un archivo pero aún no se procesa, pedir el nombre del proyecto
+  if (selectedFile && status === 'idle') {
+    return (
+        <Layout>
+            <div className="w-full max-w-lg mx-auto py-8 px-4 sm:px-6 lg:px-8">
+                <div className="bg-white rounded-xl shadow-lg p-8">
+                    <form onSubmit={handleProjectNameSubmit}>
+                        <h2 className="text-2xl font-bold text-[#333333] text-center">Project Name</h2>
+                        <p className="text-center text-gray-600 mt-2 mb-6">Please provide a name for this validation project.</p>
+                        <div className="mb-4">
+                            <label htmlFor="projectName" className="sr-only">Project Name</label>
+                            <input 
+                                type="text"
+                                id="projectName"
+                                value={projectName}
+                                onChange={(e) => setProjectName(e.target.value)}
+                                className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] sm:text-sm"
+                                placeholder="e.g., Q4 Client Validation"
+                                required
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            className="w-full flex justify-center items-center bg-[#00338D] text-white font-semibold py-2 px-4 rounded-lg hover:brightness-90 transition-all"
+                        >
+                            <FileText className="h-4 w-4 mr-2" />
+                            Start Validation
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </Layout>
+    );
   }
 
   const renderContent = () => {
     switch (status) {
       case 'idle':
-        return <FileUpload onFileLoaded={handleFileLoaded} />;
+        return <FileUpload onFileSelected={handleFileSelected} onViewHistory={handleViewHistory} />;
       case 'enriching':
         return (
           <div className="flex flex-col items-center justify-center text-center p-10 bg-white rounded-lg shadow-md">
             <Loader2 className="h-16 w-16 animate-spin text-[#00338D] mb-6" />
             <h2 className="text-2xl font-semibold text-[#333333]">Enriching Data...</h2>
             <p className="text-gray-700 mt-2">
-              Automatically adding Province and Autonomous Community information.
+              Processing project: <span className="font-bold">{projectName}</span>
             </p>
           </div>
         );
@@ -163,7 +237,7 @@ const App: React.FC = () => {
              />
          );
       case 'complete':
-        return <ResultsDashboard results={results} clients={clients} onReset={handleReset} />;
+        return <ResultsDashboard results={results} clients={clients} onReset={handleReset} isHistoric={isViewingHistory} projectName={projectName} username={username} />;
       case 'error':
          return (
           <div className="flex flex-col items-center justify-center text-center p-10 bg-white rounded-lg shadow-md border border-red-200">
