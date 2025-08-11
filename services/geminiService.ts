@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Client, PotentialMatch, SearchMethod } from '../types';
+import { Client, PotentialMatch } from '../types';
 
 const API_KEY = process.env.API_KEY;
 
@@ -24,101 +24,85 @@ const searchOnInternalDatabase = async (
 };
 
 // --- FUNCIONES AUXILIARES ---
-
-// Función mecánica para limpiar y obtener la palabra más larga de un texto.
 const getMechanicalKeyword = (text: string): string => {
     if (!text) return '';
-    const cleanedText = text
-        .toUpperCase()
-        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "") // Quitar puntuación
-        .replace(/\b(C\/|CALLE|Pª|PASEO|AV|AVDA|AVENIDA|PL|PLAZA)\b/g, '') // Quitar prefijos comunes
-        .trim();
-    
+    const cleanedText = text.toUpperCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").replace(/\b(C\/|CALLE|Pª|PASEO|AV|AVDA|AVENIDA|PL|PLAZA)\b/g, '').trim();
     const words = cleanedText.split(/\s+/);
-    // Devolver la palabra más larga, que suele ser la más significativa
     return words.sort((a, b) => b.length - a.length)[0] || '';
 };
 
 // --- FUNCIONES DE IA Y ORQUESTACIÓN ---
-
 export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Client[]> => {
-    // ... (sin cambios, se mantiene la versión robusta)
+    try {
+        const cityData = clients.map(c => ({ id: c.id, city: c.CITY }));
+        const prompt = `You are a Spanish geography expert. Given a JSON list of Spanish cities, provide their corresponding province (PROVINCIA) and autonomous community (CCAA). Cities to process: ${JSON.stringify(cityData)}`;
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: { responseMimeType: "application/json", responseSchema: geoEnrichmentSchema }
+        });
+        const result = JSON.parse(response.text);
+        const enrichmentMap = new Map(result.enrichedClients.map((item: any) => [item.id, { PROVINCIA: item.PROVINCIA, CCAA: item.CCAA }]));
+        return clients.map(client => Object.assign({}, client, enrichmentMap.get(client.id)));
+    } catch (error) {
+        console.warn("ADVERTENCIA: El servicio de enriquecimiento geográfico falló. El proceso continuará sin estos datos.", error);
+        return clients;
+    }
 };
 
 const extractKeywordsWithAI = async (client: Client): Promise<{ nameKeyword: string; streetKeyword: string }> => {
-    // ... (sin cambios)
+    const prompt = `You are an expert in Spanish addresses and entity names. From the client data, extract the most relevant keywords for a database search. Client Data: { "INFO_1": "${client.INFO_1}", "STREET": "${client.STREET}" } Return ONLY the resulting JSON object with "nameKeyword" and "streetKeyword".`;
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash", contents: prompt,
+            config: { responseMimeType: "application/json", responseSchema: keywordSchema },
+        });
+        return JSON.parse(response.text);
+    } catch (error) {
+        console.error("Error extracting keywords with AI, using fallback.", error);
+        return { nameKeyword: client.INFO_1 || '', streetKeyword: client.STREET };
+    }
 };
 
-/**
- * Orquesta la ESTRATEGIA DE BÚSQUEDA MEJORADA EN CASCADA.
- */
-export const findPotentialMatches = async (client: Client, method: SearchMethod): Promise<PotentialMatch[]> => {
+export const findPotentialMatches = async (client: Client): Promise<PotentialMatch[]> => {
     if (!client) return [];
-
     let realMatches: PotentialMatch[] = [];
     let searchStrategyUsed = "No results found";
 
-    // --- ESTRATEGIA DE BÚSQUEDA EN CASCADA MEJORADA ---
-
-    // Intento 1: Búsqueda por CIF (sin cambios)
     if (client.CIF_NIF) {
         searchStrategyUsed = `CIF: ${client.CIF_NIF}`;
         realMatches = await searchOnInternalDatabase({ cif: client.CIF_NIF });
     }
-
-    // Intento 2: Búsqueda por Palabras Clave de la IA (sin cambios)
     if (realMatches.length === 0) {
         const keywords = await extractKeywordsWithAI(client);
         if (keywords.nameKeyword || keywords.streetKeyword) {
             searchStrategyUsed = `AI Keywords: '${keywords.nameKeyword}', '${keywords.streetKeyword}'`;
-            realMatches = await searchOnInternalDatabase({
-                nameKeyword: keywords.nameKeyword,
-                streetKeyword: keywords.streetKeyword,
-                city: client.CITY,
-                province: client.PROVINCIA
-            });
+            realMatches = await searchOnInternalDatabase({ nameKeyword: keywords.nameKeyword, streetKeyword: keywords.streetKeyword, city: client.CITY, province: client.PROVINCIA });
         }
     }
-    
-    // Intento 3 (NUEVO): Búsqueda por Palabra Clave de la Calle (Mecánico)
     if (realMatches.length === 0 && client.STREET) {
         const streetKeyword = getMechanicalKeyword(client.STREET);
         searchStrategyUsed = `Mechanical Street Keyword: '${streetKeyword}'`;
         realMatches = await searchOnInternalDatabase({ streetKeyword: streetKeyword, province: client.PROVINCIA });
     }
-
-    // Intento 4 (NUEVO): Búsqueda por Palabra Clave del Nombre (Mecánico)
-     if (realMatches.length === 0 && client.INFO_1) {
+    if (realMatches.length === 0 && client.INFO_1) {
         const nameKeyword = getMechanicalKeyword(client.INFO_1);
         searchStrategyUsed = `Mechanical Name Keyword: '${nameKeyword}'`;
         realMatches = await searchOnInternalDatabase({ nameKeyword: nameKeyword, province: client.PROVINCIA });
     }
-
-    // Intento 5: Búsqueda Amplia por Ciudad (sin cambios)
     if (realMatches.length === 0) {
         searchStrategyUsed = `Broad search in city: ${client.CITY}`;
         realMatches = await searchOnInternalDatabase({ city: client.CITY, province: client.PROVINCIA });
     }
 
-    // --- ANÁLISIS FINAL ---
     if (realMatches.length === 0) return [];
 
-    const analysisPrompt = `
-        You are a data analysis assistant. Compare client data with REAL matches found in our database. Return only plausible matches.
-        Search strategy used: "${searchStrategyUsed}".
-        Client: ${JSON.stringify(client)}
-        Matches Found: ${JSON.stringify(realMatches)}
-    `;
-    
+    const analysisPrompt = `You are a data analysis assistant. Compare client data with REAL matches found in our database. Return only plausible matches. Search strategy used: "${searchStrategyUsed}". Client: ${JSON.stringify(client)}. Matches Found: ${JSON.stringify(realMatches)}`;
     try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: analysisPrompt,
-            config: { responseMimeType: "application/json", responseSchema: potentialMatchesSchema },
-        });
+        const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: analysisPrompt, config: { responseMimeType: "application/json", responseSchema: potentialMatchesSchema } });
         return JSON.parse(response.text);
     } catch (error) {
         console.error(`Error comparing matches with Gemini:`, error);
-        return realMatches; // Devolver resultados brutos si el análisis falla
+        return realMatches;
     }
 };
