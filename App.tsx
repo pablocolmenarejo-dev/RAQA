@@ -1,5 +1,3 @@
-// /App.tsx
-
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Client, ValidationResult, AppStatus, PotentialMatch, ValidationStatusValue } from './types';
 import Layout from './components/Layout';
