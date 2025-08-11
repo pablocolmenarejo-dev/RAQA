@@ -28,6 +28,9 @@ export interface PotentialMatch {
   gdpStatus?: string;
   sourceDB: string; // e.g., "REGCESS", "AEMPS"
   evidenceUrl: string;
+  // Añadir estas dos líneas
+  codigoAutonomico?: string;
+  fechaUltimaAutorizacion?: string;
 }
 
 export interface ValidationResult {
