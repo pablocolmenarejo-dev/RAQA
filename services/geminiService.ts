@@ -41,7 +41,10 @@ const potentialMatchesSchema = {
             authDate: { type: Type.STRING, description: "Authorization date found (e.g., YYYY-MM-DD)." },
             gdpStatus: { type: Type.STRING, description: "For 'Distribuidor Mayorista', the GDP certificate status." },
             sourceDB: { type: Type.STRING, description: "The simulated database source (e.g., 'REGCESS', 'AEMPS')." },
-            evidenceUrl: { type: Type.STRING, description: "A simulated URL to the evidence page." }
+            evidenceUrl: { type: Type.STRING, description: "A simulated URL to the evidence page." },
+            // Añadir estas dos propiedades al schema
+            codigoAutonomico: { type: Type.STRING, description: "For 'REGCESS', the regional authorization code of the center." },
+            fechaUltimaAutorizacion: { type: Type.STRING, description: "For 'REGCESS', the date of the last authorization (e.g., YYYY-MM-DD)." }
         },
         required: ["officialName", "officialAddress", "sourceDB", "evidenceUrl"]
     }
