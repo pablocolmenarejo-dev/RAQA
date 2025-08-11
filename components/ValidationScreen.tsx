@@ -36,6 +36,9 @@ const MatchCard: React.FC<{ match: PotentialMatch, onSelect: () => void }> = ({ 
             <div className="text-xs text-gray-600 mt-2 space-y-1">
                  {match.cif && <p><strong>CIF:</strong> {match.cif}</p>}
                  {match.serviceType && <p><strong>Service:</strong> {match.serviceType}</p>}
+                 {/* Añadir estas dos condiciones para los nuevos campos */}
+                 {match.codigoAutonomico && <p><strong>Código Autonómico:</strong> {match.codigoAutonomico}</p>}
+                 {match.fechaUltimaAutorizacion && <p><strong>Última Autorización:</strong> {match.fechaUltimaAutorizacion}</p>}
                  {match.gdpStatus && <p><strong>GDP:</strong> {match.gdpStatus}</p>}
                  <p><strong>Source:</strong> {match.sourceDB}</p>
             </div>
