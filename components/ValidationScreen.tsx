@@ -1,5 +1,3 @@
-// /components/ValidationScreen.tsx
-
 import React from 'react';
 import { Client, PotentialMatch } from '../types';
 import { Check, Search, X, AlertTriangle } from 'lucide-react';
@@ -70,7 +68,6 @@ const ValidationScreen: React.FC<ValidationScreenProps> = ({
                     <p><strong className="text-gray-600 block">Street:</strong> {client.STREET}</p>
                     <p><strong className="text-gray-600 block">City:</strong> {client.CITY}</p>
                     <p><strong className="text-gray-600 block">CIF/NIF:</strong> {client.CIF_NIF || 'N/A'}</p>
-                    {/* Esta línea ahora comprueba si existen los datos antes de mostrarlos */}
                     {(client.PROVINCIA || client.CCAA) &&
                         <p><strong className="text-gray-600 block">Enriched Location:</strong> {client.PROVINCIA}{client.CCAA && `, ${client.CCAA}`}</p>
                     }
