@@ -2,48 +2,46 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Client, PotentialMatch } from '../types';
 
 const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-    throw new Error("API_KEY environment variable not set");
-}
+if (!API_KEY) { throw new Error("API_KEY environment variable not set"); }
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-// --- ESQUEMAS DE DATOS COMPLETOS ---
+// --- ESQUEMAS ---
 const geoEnrichmentSchema = { type: Type.OBJECT, properties: { enrichedClients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { id: { type: Type.INTEGER }, PROVINCIA: { type: Type.STRING }, CCAA: { type: Type.STRING } }, required: ["id", "PROVINCIA", "CCAA"] } } }, required: ["enrichedClients"] };
 const potentialMatchesSchema = { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { officialName: { type: Type.STRING }, officialAddress: { type: Type.STRING }, cif: { type: Type.STRING }, serviceType: { type: Type.STRING }, authDate: { type: Type.STRING }, gdpStatus: { type: Type.STRING }, sourceDB: { type: Type.STRING }, evidenceUrl: { type: Type.STRING }, codigoAutonomico: { type: Type.STRING }, fechaUltimaAutorizacion: { type: Type.STRING } }, required: ["officialName", "officialAddress", "sourceDB", "evidenceUrl"] } };
 const keywordSchema = { type: Type.OBJECT, properties: { nameKeyword: { type: Type.STRING }, streetKeyword: { type: Type.STRING } }, required: ["nameKeyword", "streetKeyword"] };
 
-// --- SERVICIO DE BÚSQUEDA (PLACEHOLDER) ---
-const searchOnInternalDatabase = async (
-    params: { cif?: string; nameKeyword?: string; streetKeyword?: string; city?: string; province?: string; }
-): Promise<PotentialMatch[]> => {
+// --- LÓGICA DE BÚSQUEDA ---
+const searchOnInternalDatabase = async (params: { cif?: string; nameKeyword?: string; streetKeyword?: string; city?: string; province?: string; }): Promise<PotentialMatch[]> => {
     console.log(`Buscando en la BD interna con:`, params);
-    // TAREA PENDIENTE: Implementar la búsqueda en la base de datos interna.
-    return [];
+    return []; // Placeholder
 };
 
-// --- FUNCIONES AUXILIARES ---
-const getMechanicalKeyword = (text: string): string => {
-    if (!text) return '';
+// --- INICIO DE LA CORRECCIÓN ---
+// Función mecánica para limpiar y obtener la palabra más larga de un texto.
+const getMechanicalKeyword = (text: string | undefined): string => {
+    // Si el texto es undefined o null, devolvemos una cadena vacía inmediatamente.
+    if (!text) {
+        return '';
+    }
+    // El resto de la lógica solo se ejecuta si 'text' tiene un valor.
     const cleanedText = text.toUpperCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").replace(/\b(C\/|CALLE|Pª|PASEO|AV|AVDA|AVENIDA|PL|PLAZA)\b/g, '').trim();
+    if (!cleanedText) return '';
     const words = cleanedText.split(/\s+/);
     return words.sort((a, b) => b.length - a.length)[0] || '';
 };
+// --- FIN DE LA CORRECCIÓN ---
 
 // --- FUNCIONES DE IA Y ORQUESTACIÓN ---
 export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Client[]> => {
+    if (!clients || clients.length === 0) return [];
     try {
         const cityData = clients.map(c => ({ id: c.id, city: c.CITY }));
         const prompt = `You are a Spanish geography expert. Given a JSON list of Spanish cities, provide their corresponding province (PROVINCIA) and autonomous community (CCAA). Cities to process: ${JSON.stringify(cityData)}`;
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: { responseMimeType: "application/json", responseSchema: geoEnrichmentSchema }
-        });
+        const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt, config: { responseMimeType: "application/json", responseSchema: geoEnrichmentSchema } });
         const result = JSON.parse(response.text);
         const enrichmentMap = new Map(result.enrichedClients.map((item: any) => [item.id, { PROVINCIA: item.PROVINCIA, CCAA: item.CCAA }]));
-        return clients.map(client => Object.assign({}, client, enrichmentMap.get(client.id)));
+        return clients.map(client => Object.assign({}, client, enrichmentMap.get(client.id) || {}));
     } catch (error) {
         console.warn("ADVERTENCIA: El servicio de enriquecimiento geográfico falló. El proceso continuará sin estos datos.", error);
         return clients;
@@ -53,10 +51,7 @@ export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Clien
 const extractKeywordsWithAI = async (client: Client): Promise<{ nameKeyword: string; streetKeyword: string }> => {
     const prompt = `You are an expert in Spanish addresses and entity names. From the client data, extract the most relevant keywords for a database search. Client Data: { "INFO_1": "${client.INFO_1}", "STREET": "${client.STREET}" } Return ONLY the resulting JSON object with "nameKeyword" and "streetKeyword".`;
     try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash", contents: prompt,
-            config: { responseMimeType: "application/json", responseSchema: keywordSchema },
-        });
+        const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt, config: { responseMimeType: "application/json", responseSchema: keywordSchema } });
         return JSON.parse(response.text);
     } catch (error) {
         console.error("Error extracting keywords with AI, using fallback.", error);
@@ -80,15 +75,19 @@ export const findPotentialMatches = async (client: Client): Promise<PotentialMat
             realMatches = await searchOnInternalDatabase({ nameKeyword: keywords.nameKeyword, streetKeyword: keywords.streetKeyword, city: client.CITY, province: client.PROVINCIA });
         }
     }
-    if (realMatches.length === 0 && client.STREET) {
+    if (realMatches.length === 0) {
         const streetKeyword = getMechanicalKeyword(client.STREET);
-        searchStrategyUsed = `Mechanical Street Keyword: '${streetKeyword}'`;
-        realMatches = await searchOnInternalDatabase({ streetKeyword: streetKeyword, province: client.PROVINCIA });
+        if (streetKeyword) {
+            searchStrategyUsed = `Mechanical Street Keyword: '${streetKeyword}'`;
+            realMatches = await searchOnInternalDatabase({ streetKeyword: streetKeyword, province: client.PROVINCIA });
+        }
     }
-    if (realMatches.length === 0 && client.INFO_1) {
+    if (realMatches.length === 0) {
         const nameKeyword = getMechanicalKeyword(client.INFO_1);
-        searchStrategyUsed = `Mechanical Name Keyword: '${nameKeyword}'`;
-        realMatches = await searchOnInternalDatabase({ nameKeyword: nameKeyword, province: client.PROVINCIA });
+        if (nameKeyword) {
+            searchStrategyUsed = `Mechanical Name Keyword: '${nameKeyword}'`;
+            realMatches = await searchOnInternalDatabase({ nameKeyword: nameKeyword, province: client.PROVINCIA });
+        }
     }
     if (realMatches.length === 0) {
         searchStrategyUsed = `Broad search in city: ${client.CITY}`;
@@ -96,7 +95,7 @@ export const findPotentialMatches = async (client: Client): Promise<PotentialMat
     }
 
     if (realMatches.length === 0) return [];
-
+    
     const analysisPrompt = `You are a data analysis assistant. Compare client data with REAL matches found in our database. Return only plausible matches. Search strategy used: "${searchStrategyUsed}". Client: ${JSON.stringify(client)}. Matches Found: ${JSON.stringify(realMatches)}`;
     try {
         const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: analysisPrompt, config: { responseMimeType: "application/json", responseSchema: potentialMatchesSchema } });
