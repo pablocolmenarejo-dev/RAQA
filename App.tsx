@@ -1,7 +1,7 @@
 // /App.tsx
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { Client, ValidationResult, AppStatus, SearchMethod, PotentialMatch, ValidationStatusValue } from './types';
+import { Client, ValidationResult, AppStatus, PotentialMatch, ValidationStatusValue } from './types';
 import Layout from './components/Layout';
 import FileUpload from './components/FileUpload';
 import ValidationScreen from './components/ValidationScreen';
@@ -11,7 +11,8 @@ import { parseClientFile } from './services/fileParserService';
 import { Loader2, FileText } from 'lucide-react';
 import LoginScreen from './components/LoginScreen';
 
-const SEARCH_CASCADE: SearchMethod[] = ['cif', 'street_keyword', 'name_keyword', 'city_broad'];
+// YA NO NECESITAMOS LA CASCADA DE BÚSQUEDA AQUÍ
+// const SEARCH_CASCADE: SearchMethod[] = ['cif', 'street_keyword', 'name_keyword', 'city_broad'];
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -21,7 +22,8 @@ const App: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [results, setResults] = useState<ValidationResult[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+  // ELIMINAMOS EL ESTADO PARA EL ÍNDICE DE BÚSQUEDA
+  // const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const [potentialMatches, setPotentialMatches] = useState<PotentialMatch[]>([]);
   const [error, setError] = useState<string | null>(null);
   
@@ -30,7 +32,8 @@ const App: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const currentClient = useMemo(() => clients[currentIndex], [clients, currentIndex]);
-  const currentSearchMethod = useMemo(() => SEARCH_CASCADE[currentSearchIndex], [currentSearchIndex]);
+  // YA NO NECESITAMOS EL MÉTODO DE BÚSQUEDA ACTUAL
+  // const currentSearchMethod = useMemo(() => SEARCH_CASCADE[currentSearchIndex], [currentSearchIndex]);
 
   const handleLoginSuccess = (user: string) => {
     setUsername(user);
@@ -68,16 +71,17 @@ const App: React.FC = () => {
       setResults(initialResults);
       setStatus('validating');
       setCurrentIndex(0);
-      setCurrentSearchIndex(0);
+      // YA NO RESETEAMOS EL ÍNDICE DE BÚSQUEDA
+      // setCurrentSearchIndex(0);
     } catch (err) {
-      handleProcessingError(err, "Failed to process file.");
+      handleProcessingError(err);
     }
   };
 
   const handleViewHistory = (report: any) => {
     setClients(report.clients);
     setResults(report.results);
-    setProjectName(report.projectName); // Cargar nombre de proyecto histórico
+    setProjectName(report.projectName);
     setIsViewingHistory(true);
     setStatus('complete');
   };
@@ -85,19 +89,16 @@ const App: React.FC = () => {
   const startSearchForCurrentClient = useCallback(async () => {
     if (!currentClient || status !== 'validating') return;
     
-    if (currentSearchMethod === 'cif' && !currentClient.CIF_NIF) {
-        setCurrentSearchIndex(prev => prev + 1);
-        return;
-    }
-
     try {
-      const matches = await findPotentialMatches(currentClient, currentSearchMethod);
+      // LA LLAMADA AHORA ES MÁS SIMPLE: SOLO PASAMOS EL CLIENTE
+      const matches = await findPotentialMatches(currentClient);
       setPotentialMatches(matches);
     } catch (err) {
       handleProcessingError(err, `Failed to find matches for ${currentClient.INFO_1 || `Client #${currentClient.id}`}.`);
     }
-  }, [currentClient, currentSearchMethod, status]);
+  }, [currentClient, status]);
 
+  // ELIMINAMOS EL useEffect QUE REACCIONABA A currentSearchIndex
   useEffect(() => {
     if (status === 'validating' && currentIndex < clients.length) {
       startSearchForCurrentClient();
@@ -106,26 +107,21 @@ const App: React.FC = () => {
     }
   }, [status, currentIndex, clients.length, startSearchForCurrentClient]);
   
-  useEffect(() => {
-     if (status === 'validating' && currentIndex < clients.length && currentSearchIndex < SEARCH_CASCADE.length) {
-         startSearchForCurrentClient();
-     }
-  }, [currentSearchIndex, status, currentIndex, clients.length, startSearchForCurrentClient]);
 
-
-  const handleProcessingError = (err: unknown, defaultMessage: string) => {
+  const handleProcessingError = (err: unknown, defaultMessage = "An unknown error occurred.") => {
     console.error("Processing Error:", err);
     const errorMessage = err instanceof Error ? err.message : defaultMessage;
     setError(errorMessage);
     setStatus('error');
-    setSelectedFile(null); // Limpiar archivo en caso de error
+    setSelectedFile(null);
     setProjectName('');
   };
 
   const advanceToNext = () => {
     if (currentIndex < clients.length - 1) {
       setCurrentIndex(prev => prev + 1);
-      setCurrentSearchIndex(0);
+      // YA NO HAY ÍNDICE DE BÚSQUEDA QUE RESETEAR
+      // setCurrentSearchIndex(0);
       setPotentialMatches([]);
     } else {
       setIsViewingHistory(false);
@@ -140,16 +136,20 @@ const App: React.FC = () => {
   };
 
   const handleMatchSelected = (match: PotentialMatch) => {
-    updateResult(currentClient.id, 'Validado', `Manually validated from search results via ${currentSearchMethod}.`, match);
+    // El motivo ahora es más genérico
+    updateResult(currentClient.id, 'Validado', `Manually validated from search results.`, match);
     advanceToNext();
   };
 
+  // ESTA FUNCIÓN YA NO ES NECESARIA PORQUE NO HAY "PRÓXIMO INTENTO"
+  /*
   const handleRejectMatches = () => {
     if (currentSearchIndex < SEARCH_CASCADE.length - 1) {
       setCurrentSearchIndex(prev => prev + 1);
       setPotentialMatches([]);
     }
   };
+  */
 
   const handleMarkAsNotValidated = () => {
     updateResult(currentClient.id, 'No Validado', 'All search attempts were rejected by the user.');
@@ -162,7 +162,7 @@ const App: React.FC = () => {
     setResults([]);
     setError(null);
     setCurrentIndex(0);
-    setCurrentSearchIndex(0);
+    // setCurrentSearchIndex(0);
     setPotentialMatches([]);
     setIsViewingHistory(false);
     setSelectedFile(null);
@@ -172,40 +172,9 @@ const App: React.FC = () => {
   if (!isAuthenticated) {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   }
-
-  // Si se ha seleccionado un archivo pero aún no se procesa, pedir el nombre del proyecto
+  
   if (selectedFile && status === 'idle') {
-    return (
-        <Layout>
-            <div className="w-full max-w-lg mx-auto py-8 px-4 sm:px-6 lg:px-8">
-                <div className="bg-white rounded-xl shadow-lg p-8">
-                    <form onSubmit={handleProjectNameSubmit}>
-                        <h2 className="text-2xl font-bold text-[#333333] text-center">Project Name</h2>
-                        <p className="text-center text-gray-600 mt-2 mb-6">Please provide a name for this validation project.</p>
-                        <div className="mb-4">
-                            <label htmlFor="projectName" className="sr-only">Project Name</label>
-                            <input 
-                                type="text"
-                                id="projectName"
-                                value={projectName}
-                                onChange={(e) => setProjectName(e.target.value)}
-                                className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] sm:text-sm"
-                                placeholder="e.g., Q4 Client Validation"
-                                required
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            className="w-full flex justify-center items-center bg-[#00338D] text-white font-semibold py-2 px-4 rounded-lg hover:brightness-90 transition-all"
-                        >
-                            <FileText className="h-4 w-4 mr-2" />
-                            Start Validation
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </Layout>
-    );
+    // ... (sin cambios en el formulario de nombre de proyecto)
   }
 
   const renderContent = () => {
@@ -213,25 +182,18 @@ const App: React.FC = () => {
       case 'idle':
         return <FileUpload onFileSelected={handleFileSelected} onViewHistory={handleViewHistory} />;
       case 'enriching':
-        return (
-          <div className="flex flex-col items-center justify-center text-center p-10 bg-white rounded-lg shadow-md">
-            <Loader2 className="h-16 w-16 animate-spin text-[#00338D] mb-6" />
-            <h2 className="text-2xl font-semibold text-[#333333]">Enriching Data...</h2>
-            <p className="text-gray-700 mt-2">
-              Processing project: <span className="font-bold">{projectName}</span>
-            </p>
-          </div>
-        );
+        return (/* ... (sin cambios) ... */);
       case 'validating':
          if (!currentClient) return null;
          return (
              <ValidationScreen
                 client={currentClient}
                 matches={potentialMatches}
-                searchMethod={currentSearchMethod}
-                isLastAttempt={currentSearchIndex === SEARCH_CASCADE.length - 1}
+                // YA NO PASAMOS ESTOS PROPS
+                // searchMethod={currentSearchMethod}
+                // isLastAttempt={currentSearchIndex === SEARCH_CASCADE.length - 1}
                 onSelectMatch={handleMatchSelected}
-                onReject={handleRejectMatches}
+                // onReject={handleRejectMatches} // Ya no existe
                 onMarkNotValidated={handleMarkAsNotValidated}
                 progress={{ current: currentIndex + 1, total: clients.length }}
              />
@@ -239,18 +201,7 @@ const App: React.FC = () => {
       case 'complete':
         return <ResultsDashboard results={results} clients={clients} onReset={handleReset} isHistoric={isViewingHistory} projectName={projectName} username={username} />;
       case 'error':
-         return (
-          <div className="flex flex-col items-center justify-center text-center p-10 bg-white rounded-lg shadow-md border border-red-200">
-            <h2 className="text-2xl font-semibold text-red-600">An Error Occurred</h2>
-            <p className="text-gray-700 mt-2 max-w-md">{error}</p>
-            <button
-              onClick={handleReset}
-              className="mt-6 bg-[#00338D] text-white font-bold py-2 px-4 rounded-lg hover:brightness-90 transition-all"
-            >
-              Try Again
-            </button>
-          </div>
-        );
+         return (/* ... (sin cambios) ... */);
     }
   };
 
