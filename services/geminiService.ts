@@ -14,25 +14,23 @@ const keywordSchema = { type: Type.OBJECT, properties: { nameKeyword: { type: Ty
 // --- LÓGICA DE BÚSQUEDA ---
 const searchOnInternalDatabase = async (params: { cif?: string; nameKeyword?: string; streetKeyword?: string; city?: string; province?: string; }): Promise<PotentialMatch[]> => {
     console.log(`Buscando en la BD interna con:`, params);
-    return []; // Placeholder
+    // TAREA PENDIENTE CRÍTICA:
+    // Esta es la función que debes implementar en tu backend.
+    // Debe conectar a tu base de datos (poblada con los Excel de REGCESS)
+    // y devolver los resultados.
+    return []; // Devuelve vacío mientras no esté implementado.
 };
 
-// --- INICIO DE LA CORRECCIÓN ---
-// Función mecánica para limpiar y obtener la palabra más larga de un texto.
 const getMechanicalKeyword = (text: string | undefined): string => {
-    // Si el texto es undefined o null, devolvemos una cadena vacía inmediatamente.
     if (!text) {
         return '';
     }
-    // El resto de la lógica solo se ejecuta si 'text' tiene un valor.
     const cleanedText = text.toUpperCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").replace(/\b(C\/|CALLE|Pª|PASEO|AV|AVDA|AVENIDA|PL|PLAZA)\b/g, '').trim();
     if (!cleanedText) return '';
     const words = cleanedText.split(/\s+/);
     return words.sort((a, b) => b.length - a.length)[0] || '';
 };
-// --- FIN DE LA CORRECCIÓN ---
 
-// --- FUNCIONES DE IA Y ORQUESTACIÓN ---
 export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Client[]> => {
     if (!clients || clients.length === 0) return [];
     try {
@@ -64,10 +62,12 @@ export const findPotentialMatches = async (client: Client): Promise<PotentialMat
     let realMatches: PotentialMatch[] = [];
     let searchStrategyUsed = "No results found";
 
+    // Intento 1: Búsqueda por CIF
     if (client.CIF_NIF) {
         searchStrategyUsed = `CIF: ${client.CIF_NIF}`;
         realMatches = await searchOnInternalDatabase({ cif: client.CIF_NIF });
     }
+    // Intento 2: Búsqueda por Palabras Clave de la IA
     if (realMatches.length === 0) {
         const keywords = await extractKeywordsWithAI(client);
         if (keywords.nameKeyword || keywords.streetKeyword) {
@@ -75,6 +75,7 @@ export const findPotentialMatches = async (client: Client): Promise<PotentialMat
             realMatches = await searchOnInternalDatabase({ nameKeyword: keywords.nameKeyword, streetKeyword: keywords.streetKeyword, city: client.CITY, province: client.PROVINCIA });
         }
     }
+    // Intento 3: Búsqueda por Palabra Clave de la Calle (Mecánico)
     if (realMatches.length === 0) {
         const streetKeyword = getMechanicalKeyword(client.STREET);
         if (streetKeyword) {
@@ -82,6 +83,7 @@ export const findPotentialMatches = async (client: Client): Promise<PotentialMat
             realMatches = await searchOnInternalDatabase({ streetKeyword: streetKeyword, province: client.PROVINCIA });
         }
     }
+    // Intento 4: Búsqueda por Palabra Clave del Nombre (Mecánico)
     if (realMatches.length === 0) {
         const nameKeyword = getMechanicalKeyword(client.INFO_1);
         if (nameKeyword) {
@@ -89,6 +91,7 @@ export const findPotentialMatches = async (client: Client): Promise<PotentialMat
             realMatches = await searchOnInternalDatabase({ nameKeyword: nameKeyword, province: client.PROVINCIA });
         }
     }
+    // Intento 5: Búsqueda Amplia por Ciudad
     if (realMatches.length === 0) {
         searchStrategyUsed = `Broad search in city: ${client.CITY}`;
         realMatches = await searchOnInternalDatabase({ city: client.CITY, province: client.PROVINCIA });
@@ -96,6 +99,7 @@ export const findPotentialMatches = async (client: Client): Promise<PotentialMat
 
     if (realMatches.length === 0) return [];
     
+    // Análisis final por IA de los resultados encontrados
     const analysisPrompt = `You are a data analysis assistant. Compare client data with REAL matches found in our database. Return only plausible matches. Search strategy used: "${searchStrategyUsed}". Client: ${JSON.stringify(client)}. Matches Found: ${JSON.stringify(realMatches)}`;
     try {
         const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: analysisPrompt, config: { responseMimeType: "application/json", responseSchema: potentialMatchesSchema } });
