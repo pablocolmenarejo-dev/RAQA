@@ -11,13 +11,16 @@ import { parseClientFile } from './services/fileParserService';
 import { fetchAndParseExternalDatabases } from './services/externalDataService'; 
 import { Loader2, FileText, Server, AlertTriangle } from 'lucide-react';
 
+// Definimos un tipo más específico para el estado de la aplicación
+type ExtendedAppStatus = AppStatus | 'loading_external_data';
+
 const App: React.FC = () => {
   // --- Estados de Autenticación y Datos Principales ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string>('');
   
   // --- Estados del Proceso de Validación ---
-  const [status, setStatus] = useState<AppStatus>('idle');
+  const [status, setStatus] = useState<ExtendedAppStatus>('idle');
   const [clients, setClients] = useState<Client[]>([]);
   const [results, setResults] = useState<ValidationResult[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -278,7 +281,5 @@ const App: React.FC = () => {
     </Layout>
   );
 };
-
-export default App;
 
 export default App;
