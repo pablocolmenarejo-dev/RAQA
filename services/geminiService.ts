@@ -1,22 +1,100 @@
-// En: services/geminiService.ts
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Client, PotentialMatch } from '../types';
 
-// ... (El resto de tus imports y la configuración de la API se mantienen)
+// Asegúrate de que tu clave de API esté configurada correctamente en las variables de entorno
+const API_KEY = process.env.GEMINI_API_KEY;
+if (!API_KEY) { throw new Error("GEMINI_API_KEY environment variable not set"); }
 
-// El esquema de 'potentialMatches' que ya tenías sigue siendo válido.
-const potentialMatchesSchema = { /* ... tu esquema actual ... */ };
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-// --- NUEVA LÓGICA DE LA FUNCIÓN ---
+// --- ESQUEMAS PARA LA RESPUESTA DE LA IA ---
 
+// Esquema para el enriquecimiento geográfico
+const geoEnrichmentSchema = {
+    type: Type.OBJECT,
+    properties: {
+        enrichedClients: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.INTEGER },
+                    PROVINCIA: { type: Type.STRING },
+                    CCAA: { type: Type.STRING }
+                },
+                required: ["id", "PROVINCIA", "CCAA"]
+            }
+        }
+    },
+    required: ["enrichedClients"]
+};
+
+// Esquema para las coincidencias potenciales (debe coincidir con tu tipo PotentialMatch)
+const potentialMatchesSchema = {
+    type: Type.ARRAY,
+    items: {
+        type: Type.OBJECT,
+        properties: {
+            officialName: { type: Type.STRING },
+            officialAddress: { type: Type.STRING },
+            cif: { type: Type.STRING },
+            serviceType: { type: Type.STRING },
+            authDate: { type: Type.STRING },
+            gdpStatus: { type: Type.STRING },
+            sourceDB: { type: Type.STRING },
+            evidenceUrl: { type: Type.STRING },
+            codigoAutonomico: { type: Type.STRING },
+            fechaUltimaAutorizacion: { type: Type.STRING }
+        },
+        required: ["officialName", "officialAddress", "sourceDB", "evidenceUrl"]
+    }
+};
+
+
+// --- FUNCIONES EXPORTADAS ---
+
+/**
+ * Enriquece una lista de clientes con datos geográficos (Provincia y CCAA) usando la IA.
+ * Esta función se mantiene como estaba para seguir preparando los datos del cliente.
+ */
+export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Client[]> => {
+    if (!clients || clients.length === 0) return [];
+    try {
+        const cityData = clients.map(c => ({ id: c.id, city: c.CITY }));
+        const prompt = `You are a Spanish geography expert. Given a JSON list of Spanish cities, provide their corresponding province (PROVINCIA) and autonomous community (CCAA). Cities to process: ${JSON.stringify(cityData)}`;
+        
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: geoEnrichmentSchema
+            }
+        });
+
+        const result = JSON.parse(response.text);
+        const enrichmentMap = new Map(result.enrichedClients.map((item: any) => [item.id, { PROVINCIA: item.PROVINCIA, CCAA: item.CCAA }]));
+        
+        return clients.map(client => ({ ...client, ...(enrichmentMap.get(client.id) || {}) }));
+
+    } catch (error) {
+        console.warn("ADVERTENCIA: El servicio de enriquecimiento geográfico falló. El proceso continuará sin estos datos.", error);
+        // Devuelve los clientes sin enriquecer para que la app no se detenga.
+        return clients;
+    }
+};
+
+
+/**
+ * Busca coincidencias potenciales para un cliente dado dentro de las bases de datos externas.
+ * Esta es la nueva función que utiliza el prompt detallado.
+ */
 export const findPotentialMatches = async (
     client: Client,
-    databases: any // Este objeto contendrá los 4 arrays de datos: centros, consultas, etc.
+    databases: any // Objeto con los 4 arrays: centros, consultas, etc.
 ): Promise<PotentialMatch[]> => {
     if (!client) return [];
 
-    // 1. Construir el prompt dinámicamente
     const analysisPrompt = `
         Eres un asistente experto en análisis de datos y validación, especializado en el cumplimiento normativo (GDP) para la industria farmacéutica en España. Tu tarea es procesar un único cliente y compararlo con los datos extraídos de cuatro bases de datos oficiales del gobierno español, que te serán proporcionados en formato JSON.
 
@@ -46,15 +124,12 @@ export const findPotentialMatches = async (
         Tu respuesta DEBE ser un objeto JSON que se ajuste al esquema, conteniendo un array de objetos 'PotentialMatch'. NO incluyas texto adicional fuera del JSON. Si no hay coincidencias, devuelve: {"matches": []}.
     `;
 
-    // 2. Realizar la llamada a la API
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash", // O el modelo que prefieras
+            model: "gemini-2.5-flash",
             contents: analysisPrompt,
             config: {
                 responseMimeType: "application/json",
-                // Asumiendo que tienes un esquema para un objeto que contiene un array de matches
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
@@ -65,15 +140,11 @@ export const findPotentialMatches = async (
             }
         });
 
-        // Parsear y devolver el resultado
         const result = JSON.parse(response.text);
         return result.matches || [];
 
     } catch (error) {
         console.error(`Error procesando las coincidencias con Gemini:`, error);
-        // En caso de error, puedes devolver el array vacío o manejarlo como prefieras
         return [];
     }
 };
-
-// La función 'enrichClientsWithGeoData' puede permanecer igual.
