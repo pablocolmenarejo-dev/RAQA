@@ -1,5 +1,5 @@
 import { Client, PotentialMatch } from '@/types';
-import { normalizeText, getKeyword } from '@/src/utils/dataNormalizer';
+import { normalizeText } from '@/utils/dataNormalizer';
 
 // Mantenemos la IA solo para el enriquecimiento geográfico inicial.
 import { GoogleGenAI, Type } from "@google/genai";
@@ -29,7 +29,6 @@ const geoEnrichmentSchema = {
 // --- FUNCIONES EXPORTADAS ---
 
 export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Client[]> => {
-    // Esta función no cambia.
     if (!clients || clients.length === 0) return [];
     try {
         const cityData = clients.map(c => ({ id: c.id, city: c.CITY }));
@@ -53,37 +52,34 @@ export const findPotentialMatches = async (
 ): Promise<PotentialMatch[]> => {
     if (!client) return [];
 
-    const matches: PotentialMatch[] = [];
+    const potentialMatches: (PotentialMatch & { score: number })[] = [];
 
-    // 1. Normalizamos los datos del cliente y extraemos sus palabras clave (más de 2 letras).
+    // 1. Normalizamos los datos del cliente y extraemos sus palabras clave.
     const clientCity = normalizeText(client.CITY);
-    const clientNameKeywords = normalizeText(`${client.INFO_1 || ''} ${client.INFO_2 || ''}`).split(' ').filter(k => k.length > 2);
-    const clientStreetKeywords = normalizeText(client.STREET).split(' ').filter(k => k.length > 2);
+    const clientNameKeywords = new Set(normalizeText(`${client.INFO_1 || ''} ${client.INFO_2 || ''} ${client.INFO_3 || ''}`).split(' ').filter(k => k.length > 2));
+    const clientStreetKeywords = new Set(normalizeText(client.STREET).split(' ').filter(k => k.length > 2));
     const clientCif = (client.CIF_NIF || '').trim().toUpperCase();
-    
-    // Suponemos que el código autonómico podría estar en el campo 'Customer' o 'INFO_3'
-    const clientAutonomicCode = (client.Customer || (client as any).INFO_3 || '').trim();
+    const clientAutonomicCode = (client.Customer || '').trim();
 
     for (const dbName in databases) {
         for (const record of databases[dbName]) {
-            // Extraemos y normalizamos los datos del registro de la base de datos
             const recordName = record['Nombre Centro'];
             const recordStreet = record['Nombre de la vía'];
             const recordCity = record['Municipio'];
             const recordCif = (record['CIF'] || '').trim().toUpperCase();
-            const recordAutonomicCode = (record['Código Autonómico\ndel Centro'] || '').trim();
+            const recordAutonomicCode = (record['Código Autonómico\ndel Centro'] || '').toString().trim();
 
             // --- APLICAMOS LA NUEVA LÓGICA DE FILTROS POR PRIORIDAD ---
 
             // Filtro 1: Código Autonómico (Máxima Prioridad)
             if (clientAutonomicCode && recordAutonomicCode && clientAutonomicCode === recordAutonomicCode) {
-                matches.push({ reason: 'Coincidencia por Código Autonómico', ...createMatchObject(record, dbName) });
+                potentialMatches.push({ reason: 'Coincidencia por Código Autonómico', score: 100, ...createMatchObject(record, dbName) });
                 continue;
             }
 
             // Filtro 2: Coincidencia por CIF
             if (clientCif && recordCif && clientCif === recordCif) {
-                matches.push({ reason: 'Coincidencia por CIF/NIF', ...createMatchObject(record, dbName) });
+                potentialMatches.push({ reason: 'Coincidencia por CIF/NIF', score: 100, ...createMatchObject(record, dbName) });
                 continue;
             }
 
@@ -93,27 +89,31 @@ export const findPotentialMatches = async (
                 const normalizedRecordName = normalizeText(recordName);
                 const normalizedRecordStreet = normalizeText(recordStreet);
 
-                // Calculamos puntuaciones
-                const nameScore = clientNameKeywords.reduce((score, keyword) => score + (normalizedRecordName.includes(keyword) ? 1 : 0), 0);
-                const streetScore = clientStreetKeywords.reduce((score, keyword) => score + (normalizedRecordStreet.includes(keyword) ? 1 : 0), 0);
+                const nameMatches = [...clientNameKeywords].filter(keyword => normalizedRecordName.includes(keyword)).length;
+                const streetMatches = [...clientStreetKeywords].filter(keyword => normalizedRecordStreet.includes(keyword)).length;
 
-                // Definimos umbrales para considerar una coincidencia
-                if (nameScore >= 2 && streetScore >= 1) {
-                    matches.push({ reason: `Coincidencia Fuerte (Puntuación: N${nameScore}/C${streetScore})`, ...createMatchObject(record, dbName) });
-                } else if (nameScore >= 2) {
-                    matches.push({ reason: `Coincidencia Media (Puntuación: N${nameScore})`, ...createMatchObject(record, dbName) });
-                } else if (streetScore >= 1 && nameScore >=1) {
-                    matches.push({ reason: `Coincidencia Débil (Puntuación: N${nameScore}/C${streetScore})`, ...createMatchObject(record, dbName) });
+                const nameScore = clientNameKeywords.size > 0 ? (nameMatches / clientNameKeywords.size) * 100 : 0;
+                const streetScore = clientStreetKeywords.size > 0 ? (streetMatches / clientStreetKeywords.size) * 100 : 0;
+
+                // Puntuación total ponderada: el nombre es más importante que la calle.
+                const totalScore = (nameScore * 0.7) + (streetScore * 0.3);
+
+                if (totalScore > 60) { // Umbral de confianza del 60%
+                    potentialMatches.push({
+                        reason: `Similitud del ${Math.round(totalScore)}% (Nombre: ${Math.round(nameScore)}%, Dirección: ${Math.round(streetScore)}%)`,
+                        score: totalScore,
+                        ...createMatchObject(record, dbName)
+                    });
                 }
             }
         }
     }
 
-    // Ordenamos los resultados por la longitud de la razón (las más cortas y específicas primero)
-    return matches.sort((a, b) => a.reason.length - b.reason.length).slice(0, 5);
+    // Ordenamos los resultados por puntuación descendente y devolvemos los 5 mejores.
+    return potentialMatches.sort((a, b) => b.score - a.score).slice(0, 5);
 };
 
-// Función de ayuda para crear el objeto de coincidencia y evitar repetición de código
+// Función de ayuda para crear el objeto de coincidencia
 const createMatchObject = (record: any, dbName: string): Omit<PotentialMatch, 'reason'> => {
     return {
         officialName: record['Nombre Centro'],
