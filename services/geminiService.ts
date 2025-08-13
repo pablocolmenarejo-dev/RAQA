@@ -1,6 +1,6 @@
 import { Client, PotentialMatch } from '@/types';
-// CORRECCIÓN: Se ajusta la ruta de importación para que apunte a la carpeta 'src' donde se encuentra el archivo.
-import { normalizeText, getKeyword } from '@/src/utils/dataNormalizer';
+// CORRECCIÓN: Se ajusta la ruta de importación para que apunte a la carpeta 'src'
+import { normalizeText } from '@/src/utils/dataNormalizer';
 
 // Mantenemos la IA solo para el enriquecimiento geográfico inicial.
 import { GoogleGenAI, Type } from "@google/genai";
@@ -30,7 +30,6 @@ const geoEnrichmentSchema = {
 // --- FUNCIONES EXPORTADAS ---
 
 export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Client[]> => {
-    // Esta función no cambia.
     if (!clients || clients.length === 0) return [];
     try {
         const cityData = clients.map(c => ({ id: c.id, city: c.CITY }));
@@ -46,7 +45,7 @@ export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Clien
 };
 
 /**
- * Busca coincidencias usando una lógica de puntuación por palabras clave, mucho más flexible y precisa.
+ * Busca coincidencias usando una lógica de palabras clave, siguiendo la nueva estrategia.
  */
 export const findPotentialMatches = async (
     client: Client,
@@ -54,12 +53,12 @@ export const findPotentialMatches = async (
 ): Promise<PotentialMatch[]> => {
     if (!client) return [];
 
-    const potentialMatches: (PotentialMatch & { score: number })[] = [];
+    const matches: PotentialMatch[] = [];
 
     // 1. Normalizamos los datos del cliente y extraemos sus palabras clave.
-    const clientCity = normalizeText(client.CITY);
-    const clientNameKeywords = new Set(normalizeText(`${client.INFO_1 || ''} ${client.INFO_2 || ''} ${client.INFO_3 || ''}`).split(' ').filter(k => k.length > 2));
-    const clientStreetKeywords = new Set(normalizeText(client.STREET).split(' ').filter(k => k.length > 2));
+    const clientProvince = normalizeText(client.PROVINCIA);
+    const clientNameKeywords = new Set(normalizeText(`${client.INFO_1 || ''} ${client.INFO_2 || ''} ${client.INFO_3 || ''}`).split(' ').filter(k => k.length > 3));
+    const clientStreetKeywords = new Set(normalizeText(client.STREET).split(' ').filter(k => k.length > 3));
     const clientCif = (client.CIF_NIF || '').trim().toUpperCase();
     const clientAutonomicCode = (client.Customer || '').trim();
 
@@ -67,7 +66,7 @@ export const findPotentialMatches = async (
         for (const record of databases[dbName]) {
             const recordName = record['Nombre Centro'];
             const recordStreet = record['Nombre de la vía'];
-            const recordCity = record['Municipio'];
+            const recordProvince = record['Provincia'];
             const recordCif = (record['CIF'] || '').trim().toUpperCase();
             const recordAutonomicCode = (record['Código Autonómico\ndel Centro'] || '').toString().trim();
 
@@ -75,44 +74,41 @@ export const findPotentialMatches = async (
 
             // Filtro 1: Código Autonómico (Máxima Prioridad)
             if (clientAutonomicCode && recordAutonomicCode && clientAutonomicCode === recordAutonomicCode) {
-                potentialMatches.push({ reason: 'Coincidencia por Código Autonómico', score: 100, ...createMatchObject(record, dbName) });
+                matches.push({ reason: 'Coincidencia por Código Autonómico', ...createMatchObject(record, dbName) });
                 continue;
             }
 
             // Filtro 2: Coincidencia por CIF
             if (clientCif && recordCif && clientCif === recordCif) {
-                potentialMatches.push({ reason: 'Coincidencia por CIF/NIF', score: 100, ...createMatchObject(record, dbName) });
+                matches.push({ reason: 'Coincidencia por CIF/NIF', ...createMatchObject(record, dbName) });
                 continue;
             }
 
-            // Filtro 3: Coincidencia por Puntuación (solo si las ciudades coinciden)
-            const normalizedRecordCity = normalizeText(recordCity);
-            if (clientCity && normalizedRecordCity && clientCity === normalizedRecordCity) {
+            // Filtro 3: Coincidencia por palabras clave (solo si las provincias coinciden)
+            const normalizedRecordProvince = normalizeText(recordProvince);
+            if (clientProvince && normalizedRecordProvince && clientProvince === normalizedRecordProvince) {
                 const normalizedRecordName = normalizeText(recordName);
                 const normalizedRecordStreet = normalizeText(recordStreet);
 
-                const nameMatches = [...clientNameKeywords].filter(keyword => normalizedRecordName.includes(keyword)).length;
-                const streetMatches = [...clientStreetKeywords].filter(keyword => normalizedRecordStreet.includes(keyword)).length;
+                // Buscamos si ALGUNA palabra clave del cliente está en el registro
+                const nameMatch = [...clientNameKeywords].some(keyword => normalizedRecordName.includes(keyword));
+                const streetMatch = [...clientStreetKeywords].some(keyword => normalizedRecordStreet.includes(keyword));
 
-                const nameScore = clientNameKeywords.size > 0 ? (nameMatches / clientNameKeywords.size) * 100 : 0;
-                const streetScore = clientStreetKeywords.size > 0 ? (streetMatches / clientStreetKeywords.size) * 100 : 0;
-
-                // Puntuación total ponderada: el nombre es más importante que la calle.
-                const totalScore = (nameScore * 0.7) + (streetScore * 0.3);
-
-                if (totalScore > 60) { // Umbral de confianza del 60%
-                    potentialMatches.push({
-                        reason: `Similitud del ${Math.round(totalScore)}% (Nombre: ${Math.round(nameScore)}%, Dirección: ${Math.round(streetScore)}%)`,
-                        score: totalScore,
-                        ...createMatchObject(record, dbName)
-                    });
+                if (nameMatch && streetMatch) {
+                    matches.push({ reason: `Coincidencia Fuerte (Nombre y Dirección en ${client.PROVINCIA})`, ...createMatchObject(record, dbName) });
+                } else if (nameMatch) {
+                    matches.push({ reason: `Coincidencia Media (Nombre en ${client.PROVINCIA})`, ...createMatchObject(record, dbName) });
+                } else if (streetMatch) {
+                    matches.push({ reason: `Coincidencia Débil (Dirección en ${client.PROVINCIA})`, ...createMatchObject(record, dbName) });
                 }
             }
         }
     }
 
-    // Ordenamos los resultados por puntuación descendente y devolvemos los 5 mejores.
-    return potentialMatches.sort((a, b) => b.score - a.score).slice(0, 5);
+    // Eliminamos duplicados basados en el nombre y la dirección
+    const uniqueMatches = Array.from(new Map(matches.map(match => [`${match.officialName}-${match.officialAddress}`, match])).values());
+    
+    return uniqueMatches.slice(0, 5);
 };
 
 // Función de ayuda para crear el objeto de coincidencia
