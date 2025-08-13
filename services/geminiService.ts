@@ -1,6 +1,5 @@
 import { Client, PotentialMatch } from '@/types';
-// CORRECCIÓN: Se ajusta la ruta de importación para que apunte a la carpeta 'src' donde se encuentra el archivo.
-import { normalizeText, getKeyword } from '@/src/utils/dataNormalizer';
+import { normalizeText } from '@/utils/dataNormalizer';
 
 // Mantenemos la IA solo para el enriquecimiento geográfico inicial.
 import { GoogleGenAI, Type } from "@google/genai";
@@ -46,7 +45,7 @@ export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Clien
 };
 
 /**
- * Busca coincidencias usando lógica de código, que es más fiable y rápida.
+ * Busca coincidencias usando una lógica de puntuación por palabras clave, mucho más flexible y precisa.
  */
 export const findPotentialMatches = async (
     client: Client,
@@ -56,93 +55,72 @@ export const findPotentialMatches = async (
 
     const matches: PotentialMatch[] = [];
 
-    // 1. Normalizamos los datos del cliente UNA SOLA VEZ para eficiencia.
+    // 1. Normalizamos los datos del cliente y extraemos sus palabras clave (más de 2 letras).
     const clientCity = normalizeText(client.CITY);
-    const clientName = normalizeText(`${client.INFO_1 || ''} ${client.INFO_2 || ''}`);
-    const clientStreet = normalizeText(client.STREET);
+    const clientNameKeywords = normalizeText(`${client.INFO_1 || ''} ${client.INFO_2 || ''}`).split(' ').filter(k => k.length > 2);
+    const clientStreetKeywords = normalizeText(client.STREET).split(' ').filter(k => k.length > 2);
     const clientCif = (client.CIF_NIF || '').trim().toUpperCase();
+    
+    // Suponemos que el código autonómico podría estar en el campo 'Customer' o 'INFO_3'
+    const clientAutonomicCode = (client.Customer || client.INFO_3 || '').trim();
 
-    // Iteramos sobre cada base de datos (Centros C1, C2, etc.)
     for (const dbName in databases) {
-        const dbRecords = databases[dbName];
-
-        for (const record of dbRecords) {
-            // Extraemos los datos del registro de la base de datos
+        for (const record of databases[dbName]) {
+            // Extraemos y normalizamos los datos del registro de la base de datos
             const recordName = record['Nombre Centro'];
             const recordStreet = record['Nombre de la vía'];
             const recordCity = record['Municipio'];
             const recordCif = (record['CIF'] || '').trim().toUpperCase();
+            const recordAutonomicCode = (record['Código Autonómico\ndel Centro'] || '').trim();
 
-            // --- APLICAMOS LA LÓGICA DE FILTROS ---
+            // --- APLICAMOS LA NUEVA LÓGICA DE FILTROS POR PRIORIDAD ---
 
-            // Filtro 1: Coincidencia por CIF (Máxima Prioridad)
-            if (clientCif && recordCif && clientCif === recordCif) {
-                matches.push({
-                    officialName: recordName,
-                    officialAddress: `${recordStreet || ''}, ${recordCity || ''}`.trim(),
-                    cif: recordCif,
-                    sourceDB: dbName,
-                    reason: 'Coincidencia por CIF/NIF',
-                    evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
-                    ...record
-                });
-                continue; // Si encontramos por CIF, pasamos al siguiente registro
+            // Filtro 1: Código Autonómico (Máxima Prioridad)
+            if (clientAutonomicCode && recordAutonomicCode && clientAutonomicCode === recordAutonomicCode) {
+                matches.push({ reason: 'Coincidencia por Código Autonómico', ...createMatchObject(record, dbName) });
+                continue;
             }
 
-            // Normalizamos los datos del registro actual
+            // Filtro 2: Coincidencia por CIF
+            if (clientCif && recordCif && clientCif === recordCif) {
+                matches.push({ reason: 'Coincidencia por CIF/NIF', ...createMatchObject(record, dbName) });
+                continue;
+            }
+
+            // Filtro 3: Coincidencia por Puntuación (solo si las ciudades coinciden)
             const normalizedRecordCity = normalizeText(recordCity);
-            
-            // Filtro 2: Coincidencia por Ciudad (Requisito Básico para las demás búsquedas)
             if (clientCity && normalizedRecordCity && clientCity === normalizedRecordCity) {
                 const normalizedRecordName = normalizeText(recordName);
                 const normalizedRecordStreet = normalizeText(recordStreet);
 
-                const clientNameKeyword = getKeyword(clientName);
-                const clientStreetKeyword = getKeyword(clientStreet);
+                // Calculamos puntuaciones
+                const nameScore = clientNameKeywords.reduce((score, keyword) => score + (normalizedRecordName.includes(keyword) ? 1 : 0), 0);
+                const streetScore = clientStreetKeywords.reduce((score, keyword) => score + (normalizedRecordStreet.includes(keyword) ? 1 : 0), 0);
 
-                const nameMatch = clientNameKeyword && normalizedRecordName.includes(clientNameKeyword);
-                const streetMatch = clientStreetKeyword && normalizedRecordStreet.includes(clientStreetKeyword);
-
-                // Filtro 3: Coincidencia Fuerte (Nombre + Calle)
-                if (nameMatch && streetMatch) {
-                    matches.push({
-                        officialName: recordName,
-                        officialAddress: `${recordStreet || ''}, ${recordCity || ''}`.trim(),
-                        cif: recordCif,
-                        sourceDB: dbName,
-                        reason: 'Coincidencia Fuerte (Nombre, Calle y Ciudad)',
-                        evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
-                        ...record
-                    });
-                } 
-                // Filtro 4: Coincidencia Media (Solo Nombre)
-                else if (nameMatch) {
-                     matches.push({
-                        officialName: recordName,
-                        officialAddress: `${recordStreet || ''}, ${recordCity || ''}`.trim(),
-                        cif: recordCif,
-                        sourceDB: dbName,
-                        reason: 'Coincidencia Media (Nombre y Ciudad)',
-                        evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
-                        ...record
-                    });
-                }
-                // Filtro 5: Coincidencia Débil (Solo Calle)
-                else if (streetMatch) {
-                     matches.push({
-                        officialName: recordName,
-                        officialAddress: `${recordStreet || ''}, ${recordCity || ''}`.trim(),
-                        cif: recordCif,
-                        sourceDB: dbName,
-                        reason: 'Coincidencia Débil (Calle y Ciudad)',
-                        evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
-                        ...record
-                    });
+                // Definimos umbrales para considerar una coincidencia
+                if (nameScore >= 2 && streetScore >= 1) {
+                    matches.push({ reason: `Coincidencia Fuerte (Puntuación: N${nameScore}/C${streetScore})`, ...createMatchObject(record, dbName) });
+                } else if (nameScore >= 2) {
+                    matches.push({ reason: `Coincidencia Media (Puntuación: N${nameScore})`, ...createMatchObject(record, dbName) });
+                } else if (streetScore >= 1 && nameScore >=1) {
+                    matches.push({ reason: `Coincidencia Débil (Puntuación: N${nameScore}/C${streetScore})`, ...createMatchObject(record, dbName) });
                 }
             }
         }
     }
 
-    // Devolvemos un máximo de 5 coincidencias para no saturar la interfaz
-    return matches.slice(0, 5);
+    // Ordenamos los resultados por la longitud de la razón (las más cortas y específicas primero)
+    return matches.sort((a, b) => a.reason.length - b.reason.length).slice(0, 5);
+};
+
+// Función de ayuda para crear el objeto de coincidencia y evitar repetición de código
+const createMatchObject = (record: any, dbName: string): Omit<PotentialMatch, 'reason'> => {
+    return {
+        officialName: record['Nombre Centro'],
+        officialAddress: `${record['Nombre de la vía'] || ''}, ${record['Municipio'] || ''}`.trim(),
+        cif: record['CIF'] || '',
+        sourceDB: dbName,
+        evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
+        ...record
+    };
 };
