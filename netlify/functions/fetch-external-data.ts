@@ -1,57 +1,57 @@
 import { Handler } from '@netlify/functions';
-
-// Usamos 'require' para asegurar la máxima compatibilidad en el entorno de Netlify.
+// Si ya lo tienes, deja igual:
 const fetch = require('node-fetch');
 
 const EXCEL_URLS = {
-    centros: 'https://regcess.mscbs.es/regcessWeb/do/descargarCentros.xls',
-    consultas: 'https://regcess.mscbs.es/regcessWeb/do/descargarConsultas.xls',
-    depositos: 'https://regcess.mscbs.es/regcessWeb/do/descargarDepositos.xls',
-    psicotropos: 'https://regcess.mscbs.es/regcessWeb/do/descargarPsicotropos.xls'
+  centros_c1: 'https://regcess.mscbs.es/regcessWeb/descargaCentrosAction.do?codTipoCentro=C1',
+  centros_c2: 'https://regcess.mscbs.es/regcessWeb/descargaCentrosAction.do?codTipoCentro=C2',
+  centros_c3: 'https://regcess.mscbs.es/regcessWeb/descargaCentrosAction.do?codTipoCentro=C3',
+  establecimientos_e: 'https://regcess.mscbs.es/regcessWeb/descargaCentrosAction.do?codTipoCentro=E'
 };
 
-// Opciones para la petición, simulando un navegador para evitar bloqueos.
+// Opcional: cabeceras “de navegador” por si el origen las exige
 const fetchOptions = {
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+  headers: {
+    'User-Agent': 'Mozilla/5.0',
+    'Accept': '*/*'
+  },
+  method: 'GET'
 };
 
-const handler: Handler = async (event, context) => {
-    try {
-        const responses = await Promise.all(
-            Object.values(EXCEL_URLS).map(url => fetch(url, fetchOptions))
-        );
+export const handler: Handler = async () => {
+  try {
+    // Descargamos en paralelo, servidor→servidor (sin CORS de navegador)
+    const keys = Object.keys(EXCEL_URLS) as (keyof typeof EXCEL_URLS)[];
+    const responses = await Promise.all(keys.map(k => fetch(EXCEL_URLS[k], fetchOptions)));
 
-        for (const res of responses) {
-            if (!res.ok) {
-                console.error(`Fallo al obtener ${res.url}: ${res.statusText}`);
-                throw new Error(`No se pudo descargar uno de los archivos de validación.`);
-            }
-        }
-
-        const buffers = await Promise.all(responses.map(res => res.arrayBuffer()));
-
-        const base64Data = {
-            centros: Buffer.from(buffers[0]).toString('base64'),
-            consultas: Buffer.from(buffers[1]).toString('base64'),
-            depositos: Buffer.from(buffers[2]).toString('base64'),
-            psicotropos: Buffer.from(buffers[3]).toString('base64')
-        };
-
-        return {
-            statusCode: 200,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(base64Data),
-        };
-
-    } catch (error) {
-        console.error("Error en la función serverless fetch-external-data:", error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: error.message || 'Fallo al obtener los archivos externos.' }),
-        };
+    // Si alguna falló, devolvemos cuál
+    const bad = responses
+      .map((r, i) => ({ ok: r.ok, status: r.status, key: keys[i], url: EXCEL_URLS[keys[i]] }))
+      .filter(x => !x.ok);
+    if (bad.length) {
+      return {
+        statusCode: 502,
+        body: JSON.stringify({ error: 'Fallo al obtener algunos ficheros', detalles: bad }, null, 2)
+      };
     }
-};
 
-export { handler };
+    const buffers = await Promise.all(responses.map(r => r.arrayBuffer()));
+    const toB64 = (ab: ArrayBuffer) => Buffer.from(ab).toString('base64');
+
+    const base64Data = {
+      centros_c1:       toB64(buffers[0]),
+      centros_c2:       toB64(buffers[1]),
+      centros_c3:       toB64(buffers[2]),
+      establecimientos_e: toB64(buffers[3]),
+    };
+
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=1800' },
+      body: JSON.stringify(base64Data)
+    };
+  } catch (error: any) {
+    console.error('Error en fetch-external-data:', error);
+    return { statusCode: 500, body: JSON.stringify({ error: error?.message || 'Error interno' }) };
+  }
+};
