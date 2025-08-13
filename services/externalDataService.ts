@@ -3,10 +3,10 @@
 declare const XLSX: any;
 
 const EXCEL_URLS = {
-    centros: 'URL_AL_EXCEL_DE_CENTROS',
-    consultas: 'URL_AL_EXCEL_DE_CONSULTAS',
-    depositos: 'URL_AL_EXCEL_DE_DEPOSITOS',
-    psicotropos: 'URL_AL_EXCEL_DE_PSICOTROPOS'
+    centros: 'https://regcess.mscbs.es/regcessWeb/descargaCentrosAction.do?codTipoCentro=C1',
+    consultas: 'https://regcess.mscbs.es/regcessWeb/descargaCentrosAction.do?codTipoCentro=C2',
+    depositos: 'https://regcess.mscbs.es/regcessWeb/descargaCentrosAction.do?codTipoCentro=C3',
+    psicotropos: 'https://regcess.mscbs.es/regcessWeb/descargaCentrosAction.do?codTipoCentro=C3'
 };
 
 // Función para parsear un buffer de archivo a JSON
