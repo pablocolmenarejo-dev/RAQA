@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { findMatches } from './services/matchingService'; // Importamos nuestro "cerebro"
 import FileUpload from './components/FileUpload';       // Importamos tu componente para subir ficheros
-import './index.css'; // ¡Importante! Usamos el fichero de estilos principal
+
 
 function App() {
   // Estados para guardar los ficheros que el usuario sube
