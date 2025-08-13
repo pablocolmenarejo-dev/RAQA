@@ -1,5 +1,6 @@
 import { Client, PotentialMatch } from '@/types';
-import { normalizeText, getKeyword } from '@/utils/dataNormalizer';
+// CORRECCIÓN: Se ajusta la ruta de importación para que apunte a la carpeta 'src' donde se encuentra el archivo.
+import { normalizeText, getKeyword } from '@/src/utils/dataNormalizer';
 
 // Mantenemos la IA solo para el enriquecimiento geográfico inicial.
 import { GoogleGenAI, Type } from "@google/genai";
