@@ -17,7 +17,8 @@
   "react-dom": "^18.3.1",
   "react-router-dom": "^6.23.1",
   "papaparse": "^5.4.1",
-  "string-similarity": "^4.0.4"
+  "string-similarity": "^4.0.4",
+  "lucide-react": "^0.400.0"
 },
   "devDependencies": {
     "@types/node": "^22.14.0",
