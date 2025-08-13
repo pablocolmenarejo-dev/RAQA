@@ -1,15 +1,18 @@
+# Configuración de construcción del sitio
 [build]
   publish = "dist"
   command = "npm run build"
 
+# Configuración para las funciones serverless
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# Aumentamos el tiempo de espera para la función específica
+# Aumentamos el tiempo de espera para nuestra función específica
 [functions."fetch-external-data"]
   timeout = 26
 
+# Redirección para facilitar las llamadas a la API
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
