@@ -1,5 +1,6 @@
 import { Client, PotentialMatch } from '@/types';
-import { normalizeText } from '@/utils/dataNormalizer';
+// CORRECCIÓN: Se ajusta la ruta de importación para que apunte a la carpeta 'src' donde se encuentra el archivo.
+import { normalizeText, getKeyword } from '@/src/utils/dataNormalizer';
 
 // Mantenemos la IA solo para el enriquecimiento geográfico inicial.
 import { GoogleGenAI, Type } from "@google/genai";
@@ -29,6 +30,7 @@ const geoEnrichmentSchema = {
 // --- FUNCIONES EXPORTADAS ---
 
 export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Client[]> => {
+    // Esta función no cambia.
     if (!clients || clients.length === 0) return [];
     try {
         const cityData = clients.map(c => ({ id: c.id, city: c.CITY }));
