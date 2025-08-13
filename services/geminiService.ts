@@ -1,7 +1,7 @@
-import { Client, PotentialMatch } from '../types';
-import { normalizeText, getKeyword } from '../utils/dataNormalizer';
+import { Client, PotentialMatch } from '@/types';
+import { normalizeText, getKeyword } from '@/utils/dataNormalizer';
 
-// Ya no necesitamos la API de Gemini para la búsqueda, solo para el enriquecimiento geográfico.
+// Mantenemos la IA solo para el enriquecimiento geográfico inicial.
 import { GoogleGenAI, Type } from "@google/genai";
 
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -45,8 +45,7 @@ export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Clien
 };
 
 /**
- * Busca coincidencias usando lógica de código, no la IA.
- * Esta es la nueva función que implementa la búsqueda de forma determinista.
+ * Busca coincidencias usando lógica de código, que es más fiable y rápida.
  */
 export const findPotentialMatches = async (
     client: Client,
@@ -56,22 +55,22 @@ export const findPotentialMatches = async (
 
     const matches: PotentialMatch[] = [];
 
-    // 1. Normalizamos los datos del cliente UNA SOLA VEZ.
+    // 1. Normalizamos los datos del cliente UNA SOLA VEZ para eficiencia.
     const clientCity = normalizeText(client.CITY);
     const clientName = normalizeText(`${client.INFO_1 || ''} ${client.INFO_2 || ''}`);
     const clientStreet = normalizeText(client.STREET);
     const clientCif = (client.CIF_NIF || '').trim().toUpperCase();
 
-    // Iteramos sobre cada una de las bases de datos proporcionadas (Centros C1, C2, etc.)
+    // Iteramos sobre cada base de datos (Centros C1, C2, etc.)
     for (const dbName in databases) {
         const dbRecords = databases[dbName];
 
         for (const record of dbRecords) {
-            // Asumimos los nombres de columna del archivo centros_C1.xls
+            // Extraemos los datos del registro de la base de datos
             const recordName = record['Nombre Centro'];
             const recordStreet = record['Nombre de la vía'];
             const recordCity = record['Municipio'];
-            const recordCif = (record['CIF'] || '').trim().toUpperCase(); // Asumiendo que la columna se llama 'CIF'
+            const recordCif = (record['CIF'] || '').trim().toUpperCase();
 
             // --- APLICAMOS LA LÓGICA DE FILTROS ---
 
@@ -79,21 +78,21 @@ export const findPotentialMatches = async (
             if (clientCif && recordCif && clientCif === recordCif) {
                 matches.push({
                     officialName: recordName,
-                    officialAddress: `${recordStreet}, ${recordCity}`,
+                    officialAddress: `${recordStreet || ''}, ${recordCity || ''}`.trim(),
                     cif: recordCif,
                     sourceDB: dbName,
                     reason: 'Coincidencia por CIF/NIF',
-                    evidenceUrl: '', // Puedes añadir la URL estática si quieres
+                    evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
                     ...record
                 });
-                continue; // Pasamos al siguiente registro
+                continue; // Si encontramos por CIF, pasamos al siguiente registro
             }
 
             // Normalizamos los datos del registro actual
             const normalizedRecordCity = normalizeText(recordCity);
             
-            // Filtro 2: Coincidencia por Ciudad (Requisito Básico)
-            if (clientCity === normalizedRecordCity) {
+            // Filtro 2: Coincidencia por Ciudad (Requisito Básico para las demás búsquedas)
+            if (clientCity && normalizedRecordCity && clientCity === normalizedRecordCity) {
                 const normalizedRecordName = normalizeText(recordName);
                 const normalizedRecordStreet = normalizeText(recordStreet);
 
@@ -107,11 +106,11 @@ export const findPotentialMatches = async (
                 if (nameMatch && streetMatch) {
                     matches.push({
                         officialName: recordName,
-                        officialAddress: `${recordStreet}, ${recordCity}`,
+                        officialAddress: `${recordStreet || ''}, ${recordCity || ''}`.trim(),
                         cif: recordCif,
                         sourceDB: dbName,
                         reason: 'Coincidencia Fuerte (Nombre, Calle y Ciudad)',
-                        evidenceUrl: '',
+                        evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
                         ...record
                     });
                 } 
@@ -119,11 +118,11 @@ export const findPotentialMatches = async (
                 else if (nameMatch) {
                      matches.push({
                         officialName: recordName,
-                        officialAddress: `${recordStreet}, ${recordCity}`,
+                        officialAddress: `${recordStreet || ''}, ${recordCity || ''}`.trim(),
                         cif: recordCif,
                         sourceDB: dbName,
                         reason: 'Coincidencia Media (Nombre y Ciudad)',
-                        evidenceUrl: '',
+                        evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
                         ...record
                     });
                 }
@@ -131,11 +130,11 @@ export const findPotentialMatches = async (
                 else if (streetMatch) {
                      matches.push({
                         officialName: recordName,
-                        officialAddress: `${recordStreet}, ${recordCity}`,
+                        officialAddress: `${recordStreet || ''}, ${recordCity || ''}`.trim(),
                         cif: recordCif,
                         sourceDB: dbName,
                         reason: 'Coincidencia Débil (Calle y Ciudad)',
-                        evidenceUrl: '',
+                        evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
                         ...record
                     });
                 }
