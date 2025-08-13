@@ -1,5 +1,5 @@
 import { Client, PotentialMatch } from '@/types';
-import { normalizeText } from '@/utils/dataNormalizer';
+import { normalizeText, getKeyword } from '@/src/utils/dataNormalizer';
 
 // Mantenemos la IA solo para el enriquecimiento geográfico inicial.
 import { GoogleGenAI, Type } from "@google/genai";
@@ -62,7 +62,7 @@ export const findPotentialMatches = async (
     const clientCif = (client.CIF_NIF || '').trim().toUpperCase();
     
     // Suponemos que el código autonómico podría estar en el campo 'Customer' o 'INFO_3'
-    const clientAutonomicCode = (client.Customer || client.INFO_3 || '').trim();
+    const clientAutonomicCode = (client.Customer || (client as any).INFO_3 || '').trim();
 
     for (const dbName in databases) {
         for (const record of databases[dbName]) {
