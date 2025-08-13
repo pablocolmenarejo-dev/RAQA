@@ -1,35 +1,35 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { Client, PotentialMatch } from '../types';
-import { normalizeText, getKeyword } from '../utils/dataNormalizer'; // <-- IMPORTAMOS LA NUEVA AYUDA
+import { normalizeText, getKeyword } from '../utils/dataNormalizer';
+
+// Ya no necesitamos la API de Gemini para la búsqueda, solo para el enriquecimiento geográfico.
+import { GoogleGenAI, Type } from "@google/genai";
 
 const API_KEY = process.env.GEMINI_API_KEY;
 if (!API_KEY) { throw new Error("GEMINI_API_KEY environment variable not set"); }
-
 const ai = new GoogleGenAI({ apiKey: API_KEY });
-
-// --- ESQUEMAS (sin cambios) ---
-const geoEnrichmentSchema = { /* ... tu esquema ... */ };
-const potentialMatchesSchema = {
-    type: Type.ARRAY,
-    items: {
-        type: Type.OBJECT,
-        properties: {
-            officialName: { type: Type.STRING },
-            officialAddress: { type: Type.STRING },
-            cif: { type: Type.STRING },
-            sourceDB: { type: Type.STRING },
-            matchReason: { type: Type.STRING },
-            // Añadimos el objeto original completo para tener todos los datos
-            originalRecord: { type: Type.OBJECT }
-        },
-        required: ["officialName", "officialAddress", "sourceDB", "matchReason", "originalRecord"]
-    }
+const geoEnrichmentSchema = {
+    type: Type.OBJECT,
+    properties: {
+        enrichedClients: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.INTEGER },
+                    PROVINCIA: { type: Type.STRING },
+                    CCAA: { type: Type.STRING }
+                },
+                required: ["id", "PROVINCIA", "CCAA"]
+            }
+        }
+    },
+    required: ["enrichedClients"]
 };
 
 // --- FUNCIONES EXPORTADAS ---
 
 export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Client[]> => {
-    // Esta función no necesita cambios
+    // Esta función no cambia.
     if (!clients || clients.length === 0) return [];
     try {
         const cityData = clients.map(c => ({ id: c.id, city: c.CITY }));
@@ -45,77 +45,104 @@ export const enrichClientsWithGeoData = async (clients: Client[]): Promise<Clien
 };
 
 /**
- * Busca coincidencias usando la nueva estrategia híbrida.
+ * Busca coincidencias usando lógica de código, no la IA.
+ * Esta es la nueva función que implementa la búsqueda de forma determinista.
  */
 export const findPotentialMatches = async (
     client: Client,
-    databases: any
+    databases: { [key: string]: any[] }
 ): Promise<PotentialMatch[]> => {
     if (!client) return [];
 
-    // **PASO 1: NORMALIZAMOS LOS DATOS DEL CLIENTE CON CÓDIGO**
-    const normalizedClient = {
-        city: normalizeText(client.CITY),
-        name: normalizeText(client.INFO_1 || '' + ' ' + (client.INFO_2 || '')),
-        street: normalizeText(client.STREET),
-        cif: client.CIF_NIF || ''
-    };
+    const matches: PotentialMatch[] = [];
 
-    // **PASO 2: CREAMOS UN PROMPT MÁS SIMPLE Y DIRECTO**
-    const analysisPrompt = `
-    Eres un experto en encontrar coincidencias en datos. Te proporcionaré un cliente con sus datos ya limpios y normalizados, y varias bases de datos. Tu única tarea es encontrar el mejor registro coincidente en las bases de datos.
+    // 1. Normalizamos los datos del cliente UNA SOLA VEZ.
+    const clientCity = normalizeText(client.CITY);
+    const clientName = normalizeText(`${client.INFO_1 || ''} ${client.INFO_2 || ''}`);
+    const clientStreet = normalizeText(client.STREET);
+    const clientCif = (client.CIF_NIF || '').trim().toUpperCase();
 
-    **INSTRUCCIONES DE BÚSQUEDA:**
-    1.  **Prioridad 1 (CIF/NIF):** Si el CIF del cliente coincide con algún registro, esa es la mejor coincidencia.
-    2.  **Prioridad 2 (Nombre + Dirección):** Si no hay coincidencia por CIF, busca el registro cuyo nombre y dirección se parezcan más a los del cliente, SIEMPRE Y CUANDO estén en la misma ciudad. La similitud no tiene que ser exacta. "HOSPITAL U ALBACETE" es similar a "COMPLEJO HOSPITALARIO UNIVERSITARIO ALBACETE".
-    3.  **No seas demasiado estricto.** Busca la conexión más lógica y probable.
+    // Iteramos sobre cada una de las bases de datos proporcionadas (Centros C1, C2, etc.)
+    for (const dbName in databases) {
+        const dbRecords = databases[dbName];
 
-    **Cliente (Datos Normalizados):**
-    ${JSON.stringify(normalizedClient)}
+        for (const record of dbRecords) {
+            // Asumimos los nombres de columna del archivo centros_C1.xls
+            const recordName = record['Nombre Centro'];
+            const recordStreet = record['Nombre de la vía'];
+            const recordCity = record['Municipio'];
+            const recordCif = (record['CIF'] || '').trim().toUpperCase(); // Asumiendo que la columna se llama 'CIF'
 
-    **Bases de Datos (Datos sin procesar):**
-    ${JSON.stringify(databases)}
+            // --- APLICAMOS LA LÓGICA DE FILTROS ---
 
-    **FORMATO DE SALIDA OBLIGATORIO:**
-    Devuelve SÓLO un objeto JSON con un array llamado "matches".
-    - Si encuentras una buena coincidencia, el array debe contener un único objeto.
-    - Si encuentras varias coincidencias muy buenas, devuélvelas todas.
-    - Si no encuentras ninguna coincidencia clara, devuelve el array vacío.
-    - El objeto de la coincidencia debe incluir el campo "originalRecord" con el registro completo de la base de datos.
-    `;
+            // Filtro 1: Coincidencia por CIF (Máxima Prioridad)
+            if (clientCif && recordCif && clientCif === recordCif) {
+                matches.push({
+                    officialName: recordName,
+                    officialAddress: `${recordStreet}, ${recordCity}`,
+                    cif: recordCif,
+                    sourceDB: dbName,
+                    reason: 'Coincidencia por CIF/NIF',
+                    evidenceUrl: '', // Puedes añadir la URL estática si quieres
+                    ...record
+                });
+                continue; // Pasamos al siguiente registro
+            }
 
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: analysisPrompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        matches: potentialMatchesSchema
-                    },
-                    required: ["matches"]
+            // Normalizamos los datos del registro actual
+            const normalizedRecordCity = normalizeText(recordCity);
+            
+            // Filtro 2: Coincidencia por Ciudad (Requisito Básico)
+            if (clientCity === normalizedRecordCity) {
+                const normalizedRecordName = normalizeText(recordName);
+                const normalizedRecordStreet = normalizeText(recordStreet);
+
+                const clientNameKeyword = getKeyword(clientName);
+                const clientStreetKeyword = getKeyword(clientStreet);
+
+                const nameMatch = clientNameKeyword && normalizedRecordName.includes(clientNameKeyword);
+                const streetMatch = clientStreetKeyword && normalizedRecordStreet.includes(clientStreetKeyword);
+
+                // Filtro 3: Coincidencia Fuerte (Nombre + Calle)
+                if (nameMatch && streetMatch) {
+                    matches.push({
+                        officialName: recordName,
+                        officialAddress: `${recordStreet}, ${recordCity}`,
+                        cif: recordCif,
+                        sourceDB: dbName,
+                        reason: 'Coincidencia Fuerte (Nombre, Calle y Ciudad)',
+                        evidenceUrl: '',
+                        ...record
+                    });
+                } 
+                // Filtro 4: Coincidencia Media (Solo Nombre)
+                else if (nameMatch) {
+                     matches.push({
+                        officialName: recordName,
+                        officialAddress: `${recordStreet}, ${recordCity}`,
+                        cif: recordCif,
+                        sourceDB: dbName,
+                        reason: 'Coincidencia Media (Nombre y Ciudad)',
+                        evidenceUrl: '',
+                        ...record
+                    });
+                }
+                // Filtro 5: Coincidencia Débil (Solo Calle)
+                else if (streetMatch) {
+                     matches.push({
+                        officialName: recordName,
+                        officialAddress: `${recordStreet}, ${recordCity}`,
+                        cif: recordCif,
+                        sourceDB: dbName,
+                        reason: 'Coincidencia Débil (Calle y Ciudad)',
+                        evidenceUrl: '',
+                        ...record
+                    });
                 }
             }
-        });
-
-        const result = JSON.parse(response.text);
-        
-        // Mapeamos el resultado para que se ajuste a la estructura que espera la app
-        return result.matches.map((match: any) => ({
-            officialName: match.officialName,
-            officialAddress: match.officialAddress,
-            cif: match.cif,
-            sourceDB: match.sourceDB,
-            reason: match.matchReason, // La razón ahora viene de la IA
-            evidenceUrl: 'https://regcess.mscbs.es/regcessWeb/inicioDescargarCentrosAction.do',
-            // Añadimos el resto de datos desde el registro original para mostrarlos
-            ...match.originalRecord 
-        })) || [];
-
-    } catch (error) {
-        console.error(`Error procesando las coincidencias con Gemini:`, error);
-        return [];
+        }
     }
+
+    // Devolvemos un máximo de 5 coincidencias para no saturar la interfaz
+    return matches.slice(0, 5);
 };
