@@ -1,0 +1,16 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Aumentamos el tiempo de espera para la función específica
+[functions."fetch-external-data"]
+  timeout = 26
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
