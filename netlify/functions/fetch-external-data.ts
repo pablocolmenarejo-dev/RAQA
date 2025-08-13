@@ -1,7 +1,8 @@
 import { Handler } from '@netlify/functions';
-import fetch from 'node-fetch';
 
-// URLs actualizadas con los enlaces de descarga directos.
+// Método de importación más compatible para entornos de servidor.
+const fetch = (...args: any[]) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
 const EXCEL_URLS = {
     centros: 'https://regcess.mscbs.es/regcessWeb/do/descargarCentros.xls',
     consultas: 'https://regcess.mscbs.es/regcessWeb/do/descargarConsultas.xls',
@@ -11,25 +12,19 @@ const EXCEL_URLS = {
 
 const handler: Handler = async (event, context) => {
     try {
-        // Descargar todos los archivos en paralelo
-        const responses = await Promise.all([
-            fetch(EXCEL_URLS.centros),
-            fetch(EXCEL_URLS.consultas),
-            fetch(EXCEL_URLS.depositos),
-            fetch(EXCEL_URLS.psicotropos)
-        ]);
+        const responses = await Promise.all(
+            Object.values(EXCEL_URLS).map(url => fetch(url))
+        );
 
-        // Verificar que todas las respuestas son correctas
         for (const res of responses) {
             if (!res.ok) {
-                throw new Error(`Failed to fetch ${res.url}: ${res.statusText}`);
+                console.error(`Fallo al obtener ${res.url}: ${res.statusText}`);
+                throw new Error(`No se pudo descargar uno de los archivos de validación.`);
             }
         }
 
-        // Convertir las respuestas a ArrayBuffer (datos binarios)
         const buffers = await Promise.all(responses.map(res => res.arrayBuffer()));
 
-        // Convertir los datos binarios a Base64 para poder enviarlos como JSON
         const base64Data = {
             centros: Buffer.from(buffers[0]).toString('base64'),
             consultas: Buffer.from(buffers[1]).toString('base64'),
@@ -44,12 +39,13 @@ const handler: Handler = async (event, context) => {
         };
 
     } catch (error) {
-        console.error("Error en la función serverless:", error);
+        console.error("Error en la función serverless fetch-external-data:", error);
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: 'Fallo al obtener los archivos externos.' }),
+            body: JSON.stringify({ error: error.message || 'Fallo al obtener los archivos externos.' }),
         };
     }
 };
 
 export { handler };
+
