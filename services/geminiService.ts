@@ -96,33 +96,89 @@ export const findPotentialMatches = async (
     if (!client) return [];
 
     const analysisPrompt = `
-        Eres un asistente experto en análisis de datos y validación, especializado en el cumplimiento normativo (GDP) para la industria farmacéutica en España. Tu tarea es procesar un único cliente y compararlo con los datos extraídos de cuatro bases de datos oficiales del gobierno español, que te serán proporcionados en formato JSON.
+    Eres un analista de datos experto en la normalización y comparación de datos (fuzzy matching), con especialización en direcciones y nombres de entidades en España. Tu misión es encontrar las coincidencias más probables entre un registro de cliente y un listado de bases de datos de centros autorizados.
 
-        **Contexto de la Tarea:**
-        Recibirás un objeto 'Client' y un objeto 'Databases' con cuatro arrays: 'centros', 'consultas', 'depositos' y 'psicotropos'.
+**MISIÓN PRINCIPAL**
 
-        **Misión:**
-        Encuentra y devuelve una lista de "coincidencias potenciales" ('PotentialMatch') para el cliente, buscando metódicamente en los cuatro conjuntos de datos. Si no encuentras ninguna, devuelve un array vacío.
+Recibirás un único objeto `Client` y un objeto `Databases` que contiene cuatro listas de centros (`Centros C1`, `Centros C2`, etc.). Debes comparar el `Client` con **cada uno de los registros** en las cuatro listas y devolver un array con las coincidencias más plausibles.
 
-        **Cliente a procesar:**
-        ${JSON.stringify(client)}
+**PASO 1: NORMALIZACIÓN DE DATOS (OBLIGATORIO)**
 
-        **Bases de datos para la búsqueda:**
-        ${JSON.stringify(databases)}
+Antes de cualquier comparación, debes normalizar todos los datos de nombres y direcciones (tanto del `Client` como de los registros de las `Databases`). Este es el paso más importante.
 
-        **Estrategia de Búsqueda por Pasos:**
-        1.  **Paso 1: Búsqueda por Identificador Único (CIF/NIF).**
-        2.  **Paso 2: Búsqueda por Coincidencia Fuerte (Palabra Clave de Dirección + Palabra Clave de Nombre).**
-        3.  **Paso 3: Búsqueda por Coincidencia Media (Palabra Clave de Dirección).**
-        4.  **Paso 4: Búsqueda por Coincidencia Débil (Palabra Clave de Nombre).**
-        5.  **Paso 5: Búsqueda Amplia (Ciudad).**
+1.  **Convertir a Mayúsculas:** `Paseo de la Castellana` -> `PASEO DE LA CASTELLANA`.
+2.  **Eliminar Acentos y Diéresis:** `CORPORACIÓ` -> `CORPORACIO`, `GÜELL` -> `GUELL`.
+3.  **Eliminar Puntuación:** Quita todos los puntos, comas, guiones, etc.
+4.  **Eliminar Abreviaturas y Artículos Comunes:** Elimina de las cadenas de texto las siguientes palabras: `C/`, `CL`, `CALLE`, `AV`, `AVDA`, `AVENIDA`, `Pº`, `PASEO`, `PL`, `PLAZA`, `TRVA`, `TRAVESIA`, `S/N`, `DE`, `LA`, `LAS`, `EL`, `LOS`, `Y`, `A`.
+    * *Ejemplo:* `Pº DE LA IGUALDAD, S/N` -> `IGUALDAD`.
+    * *Ejemplo:* `AVDA. ACADEMIA GRAL. MILITAR` -> `ACADEMIA GRAL MILITAR`.
 
-        **Análisis y Filtrado Final:**
-        Analiza la plausibilidad antes de devolver resultados. Descarta coincidencias claramente incorrectas.
+**PASO 2: ESTRATEGIA DE BÚSQUEDA POR FILTROS SUCESIVOS**
 
-        **Formato de Salida Obligatorio:**
-        Tu respuesta DEBE ser un objeto JSON que se ajuste al esquema, conteniendo un array de objetos 'PotentialMatch'. NO incluyas texto adicional fuera del JSON. Si no hay coincidencias, devuelve: {"matches": []}.
-    `;
+Debes aplicar esta estrategia para cada uno de los 4 archivos de base de datos. Procesa los registros en este orden estricto. Si encuentras una o más coincidencias de alta confianza en un paso, detén la búsqueda para ese cliente y devuelve esos resultados.
+
+1.  **Filtro 1: Coincidencia por CIF/NIF (Máxima Prioridad).**
+    * Si el `Client.CIF_NIF` existe y coincide de forma exacta con el CIF de algún registro en las bases de datos, considéralo una coincidencia 100% segura y devuélvela inmediatamente.
+
+2.  **Filtro 2: Coincidencia Fuerte (Nombre Clave + Calle Clave + Misma Ciudad).**
+    * **Condición:** El `Client.CITY` debe coincidir con el `Municipio` del registro de la base de datos (tras normalizar ambos).
+    * **Acción:** Extrae la palabra más larga o significativa del nombre del cliente (`INFO_1` o `INFO_2`) y de la calle (`STREET`). Haz lo mismo para el `Nombre Centro` y `Nombre de la vía` del registro de la base de datos.
+    * **Criterio:** Si la palabra clave del nombre del cliente está contenida en el nombre del centro Y la palabra clave de la calle del cliente está contenida en la calle del centro, es una **Coincidencia de Alta Confianza**.
+    * *Ejemplo:* Cliente "HOSPITAL U. ALBACETE" en "HERMANOS FALCO" (Albacete) -> Coincide con Centro "COMPLEJO HOSPITALARIO UNIVERSITARIO DE ALBACETE" en "HERMANOS FALCO" (Albacete). `ALBACETE` y `FALCO` son las palabras clave.
+
+3.  **Filtro 3: Coincidencia Media (Nombre Clave + Misma Ciudad).**
+    * **Condición:** El `Client.CITY` debe coincidir con el `Municipio`.
+    * **Acción:** Compara solo las palabras clave de los nombres (`INFO_1`/`INFO_2` vs. `Nombre Centro`).
+    * **Criterio:** Si la palabra clave del nombre del cliente está contenida en el nombre del centro, es una **Coincidencia de Confianza Media**.
+
+4.  **Filtro 4: Coincidencia Débil (Calle Clave + Misma Ciudad).**
+    * **Condición:** El `Client.CITY` debe coincidir con el `Municipio`.
+    * **Acción:** Compara solo las palabras clave de las calles (`STREET` vs. `Nombre de la vía`).
+    * **Criterio:** Si la palabra clave de la calle del cliente está contenida en la calle del centro, es una **Coincidencia de Confianza Débil**.
+
+**PASO 3: FORMATO DE SALIDA (OBLIGATORIO)**
+
+Tu respuesta debe ser **únicamente un objeto JSON** que contenga un array llamado `matches`. Cada objeto dentro del array debe incluir los datos del registro coincidente de la base de datos y un campo `matchReason` que explique por qué se consideró una coincidencia, usando la terminología de los filtros (Ej: "Coincidencia Fuerte: Nombre, Calle y Ciudad", "Coincidencia por CIF/NIF"). Si no encuentras ninguna coincidencia tras aplicar todos los filtros, devuelve un array `matches` vacío.
+
+**Ejemplo de Datos de Entrada:**
+
+* **Client:**
+    ```json
+    {
+      "id": 2,
+      "INFO_1": "SESCAM-COMP.HOSPITAL U. ALBACETE",
+      "STREET": "HERMANOS FALCO, S/N",
+      "CITY": "ALBACETE"
+    }
+    ```
+* **Databases:**
+    ```json
+    {
+      "Centros C1": [
+        { "id": 1, "Nombre Centro": "COMPLEJO HOSPITALARIO UNIVERSITARIO DE ALBACETE", "Nombre de la vía": "HERMANOS FALCO", "Municipio": "Albacete" },
+        { "id": 2, "Nombre Centro": "OTRO HOSPITAL", "Nombre de la vía": "OTRA CALLE", "Municipio": "Albacete" }
+      ],
+      "Centros C2": [],
+      "Centros C3": [],
+      "Establecimientos Sanitarios": []
+    }
+    ```
+
+**Ejemplo de Salida Esperada:**
+
+```json
+{
+  "matches": [
+    {
+      "officialName": "COMPLEJO HOSPITALARIO UNIVERSITARIO DE ALBACETE",
+      "officialAddress": "HERMANOS FALCO",
+      "sourceDB": "Centros C1",
+      "matchReason": "Coincidencia Fuerte: Nombre, Calle y Ciudad",
+      // ...resto de campos del registro de la base de datos...
+    }
+  ]
+}
+
 
     try {
         const response = await ai.models.generateContent({
