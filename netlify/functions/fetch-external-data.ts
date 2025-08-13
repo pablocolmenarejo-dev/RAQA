@@ -1,7 +1,7 @@
 import { Handler } from '@netlify/functions';
 
-// Método de importación más compatible para entornos de servidor.
-const fetch = (...args: any[]) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+// Usamos 'require' para asegurar la máxima compatibilidad en el entorno de Netlify.
+const fetch = require('node-fetch');
 
 const EXCEL_URLS = {
     centros: 'https://regcess.mscbs.es/regcessWeb/do/descargarCentros.xls',
@@ -10,10 +10,17 @@ const EXCEL_URLS = {
     psicotropos: 'https://regcess.mscbs.es/regcessWeb/do/descargarPsicotropos.xls'
 };
 
+// Opciones para la petición, simulando un navegador para evitar bloqueos.
+const fetchOptions = {
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+};
+
 const handler: Handler = async (event, context) => {
     try {
         const responses = await Promise.all(
-            Object.values(EXCEL_URLS).map(url => fetch(url))
+            Object.values(EXCEL_URLS).map(url => fetch(url, fetchOptions))
         );
 
         for (const res of responses) {
@@ -48,4 +55,3 @@ const handler: Handler = async (event, context) => {
 };
 
 export { handler };
-
