@@ -3,9 +3,14 @@
 import React, { useState } from 'react';
 import { findMatches } from './services/matchingService'; // Importamos nuestro "cerebro"
 import FileUpload from './components/FileUpload';       // Importamos tu componente para subir ficheros
+import LoginScreen from './components/LoginScreen';      // Importamos la pantalla de login
 import './index.css' // <-- Asegúrate de que esta línea está aquí
 
 function App() {
+  // Estado para saber si el usuario ha iniciado sesión
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState('');
+
   // Estados para guardar los ficheros que el usuario sube
   const [fileOficial, setFileOficial] = useState<File | null>(null);
   const [fileInterno, setFileInterno] = useState<File | null>(null);
@@ -14,6 +19,12 @@ function App() {
   const [matches, setMatches] = useState<any[]>([]);
   // Estado para mostrar un mensaje de "Cargando..." mientras se procesan los datos
   const [isLoading, setIsLoading] = useState(false);
+
+  // Esta función se ejecuta cuando el login es exitoso
+  const handleLoginSuccess = (loggedInUsername: string) => {
+    setUsername(loggedInUsername);
+    setIsAuthenticated(true);
+  };
 
   // Esta función se ejecuta cuando el usuario hace clic en el botón "Analizar"
   const handleAnalyzeClick = async () => {
@@ -36,11 +47,17 @@ function App() {
     }
   };
 
+  // Si el usuario no está autenticado, mostramos la pantalla de login
+  if (!isAuthenticated) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // Si el usuario ya está autenticado, mostramos la app principal
   return (
     <div className="App">
       <header className="App-header">
         <h1>Validador de Clientes</h1>
-        <p>Sube el fichero oficial y el fichero interno para encontrar coincidencias.</p>
+        <p>Sube el fichero oficial y el fichero interno para encontrar coincidencias. (Usuario: {username})</p>
       </header>
 
       <main className="App-main">
@@ -48,12 +65,12 @@ function App() {
           {/* Usamos tu componente FileUpload para el fichero oficial */}
           <div className="uploader-container">
             <h2>Fichero Oficial (centros_C1)</h2>
-            <FileUpload onFileSelect={setFileOficial} />
+            <FileUpload onFileSelected={setFileOficial} />
           </div>
           {/* Y otra vez para el fichero interno */}
           <div className="uploader-container">
             <h2>Fichero Interno (PRUEBA)</h2>
-            <FileUpload onFileSelect={setFileInterno} />
+            <FileUpload onFileSelected={setFileInterno} />
           </div>
         </div>
 
