@@ -146,7 +146,7 @@ const ProjectNameScreen: React.FC<{ onProjectNameSet: (name: string) => void }> 
             />
             <button 
                 onClick={() => onProjectNameSet(name)}
-                disabled={!name}
+                disabled={name.trim() === ''} // CÓDIGO CORREGIDO AQUÍ
                 className="w-full py-2 px-4 bg-blue-600 text-white rounded-md disabled:bg-gray-400"
             >
                 Continue
