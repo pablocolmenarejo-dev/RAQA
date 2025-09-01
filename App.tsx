@@ -1,109 +1,158 @@
 // src/App.tsx
 
 import React, { useState } from 'react';
-import { findMatches } from './services/matchingService'; // Importamos nuestro "cerebro"
-import FileUpload from './components/FileUpload';       // Importamos tu componente para subir ficheros
-import './index.css' // <-- Asegúrate de que esta línea está aquí
+import { AppStatus, Client, ValidationResult } from './types';
+import LoginScreen from './components/LoginScreen';
+import FileUpload from './components/FileUpload';
+import DatabaseUploadScreen from './components/DatabaseUploadScreen';
+import ValidationScreen from './components/ValidationScreen';
+import ResultsDashboard from './components/ResultsDashboard';
+import Layout from './components/Layout';
+import { enrichClientsWithGeoData, findPotentialMatches } from './services/geminiService';
+import { parseClientFile } from './services/fileParserService';
+import './index.css';
 
 function App() {
-  // Estados para guardar los ficheros que el usuario sube
-  const [fileOficial, setFileOficial] = useState<File | null>(null);
-  const [fileInterno, setFileInterno] = useState<File | null>(null);
+  const [appStatus, setAppStatus] = useState<AppStatus>('idle');
+  const [clients, setClients] = useState<Client[]>([]);
+  const [databases, setDatabases] = useState<{ [key: string]: any[] }>({});
+  const [currentClientIndex, setCurrentClientIndex] = useState(0);
+  const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [projectName, setProjectName] = useState<string>('');
+  const [username, setUsername] = useState<string | null>(null);
 
-  // Estado para guardar la lista de coincidencias que encontremos
-  const [matches, setMatches] = useState<any[]>([]);
-  // Estado para mostrar un mensaje de "Cargando..." mientras se procesan los datos
-  const [isLoading, setIsLoading] = useState(false);
+  const handleLoginSuccess = (user: string) => {
+    setUsername(user);
+    setAppStatus('project_name');
+  };
 
-  // Esta función se ejecuta cuando el usuario hace clic en el botón "Analizar"
-  const handleAnalyzeClick = async () => {
-    if (!fileOficial || !fileInterno) {
-      alert('Por favor, sube ambos ficheros para continuar.');
-      return;
-    }
-    setIsLoading(true); // Empezamos a cargar
-    setMatches([]); // Limpiamos los resultados de análisis anteriores
+  const handleFileSelected = (file: File) => {
+    setSelectedFile(file);
+    setAppStatus('project_name');
+  };
 
+  const handleProjectNameSet = async (name: string) => {
+    if (!selectedFile) return;
+    setProjectName(name);
+    setAppStatus('enriching');
     try {
-      // ¡Aquí ocurre la magia! Llamamos a nuestro "cerebro" para que encuentre las coincidencias
-      const results = await findMatches(fileOficial, fileInterno);
-      setMatches(results); // Guardamos los resultados encontrados
+      const parsedClients = await parseClientFile(selectedFile);
+      const enrichedClients = await enrichClientsWithGeoData(parsedClients as Client[]);
+      setClients(enrichedClients);
+      setAppStatus('uploading_databases');
     } catch (error) {
-      console.error('Ha ocurrido un error durante el análisis:', error);
-      alert('Ha ocurrido un error al procesar los ficheros. Revisa la consola para más detalles.');
-    } finally {
-      setIsLoading(false); // Terminamos de cargar
+      console.error("Error processing file:", error);
+      setAppStatus('error');
+    }
+  };
+
+  const handleDatabasesLoaded = (db: { [key: string]: any[] }) => {
+    setDatabases(db);
+    setAppStatus('validating');
+    processNextClient(clients[0], db);
+  };
+
+  const processNextClient = async (client: Client, db: { [key: string]: any[] }) => {
+    const matches = await findPotentialMatches(client, db);
+    setClients(prev => prev.map(c => c.id === client.id ? { ...c, matches } : c));
+    setAppStatus('validating');
+  };
+
+  const handleValidationStep = (result: ValidationResult) => {
+    setValidationResults(prev => [...prev, result]);
+    const nextClientIndex = currentClientIndex + 1;
+    if (nextClientIndex < clients.length) {
+      setCurrentClientIndex(nextClientIndex);
+      processNextClient(clients[nextClientIndex], databases);
+    } else {
+      setAppStatus('complete');
+    }
+  };
+
+  const handleReset = () => {
+    setAppStatus('idle');
+    setClients([]);
+    setDatabases({});
+    setCurrentClientIndex(0);
+    setValidationResults([]);
+    setSelectedFile(null);
+    setProjectName('');
+    setUsername(null);
+  };
+
+  const renderScreen = () => {
+    if (!username) {
+      return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+    }
+
+    switch (appStatus) {
+      case 'idle':
+        return <FileUpload onFileSelected={handleFileSelected} />;
+      case 'project_name':
+        return <ProjectNameScreen onProjectNameSet={handleProjectNameSet} />;
+      case 'uploading_databases':
+        return <DatabaseUploadScreen onDatabasesLoaded={handleDatabasesLoaded} projectName={projectName} />;
+      case 'validating':
+        const currentClient = clients[currentClientIndex];
+        return (
+          <ValidationScreen
+            client={currentClient}
+            matches={currentClient.matches || []}
+            onSelectMatch={(match) => handleValidationStep({ clientId: currentClient.id, status: 'Validado', reason: match.reason, officialData: match })}
+            onMarkNotValidated={() => handleValidationStep({ clientId: currentClient.id, status: 'No Validado', reason: 'No se encontraron coincidencias adecuadas.' })}
+            progress={{ current: currentClientIndex + 1, total: clients.length }}
+          />
+        );
+      case 'complete':
+        return <ResultsDashboard results={validationResults} clients={clients} onReset={handleReset} projectName={projectName} username={username} />;
+      case 'error':
+        return (
+          <div className="text-center mt-10">
+            <p className="text-red-600 font-semibold text-lg">Ha ocurrido un error. Por favor, reinicia el proceso.</p>
+            <button onClick={handleReset} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Volver al inicio</button>
+          </div>
+        );
+      case 'enriching':
+      default:
+        return (
+          <div className="text-center mt-10">
+            <p className="text-gray-600 font-semibold text-lg">Procesando...</p>
+          </div>
+        );
     }
   };
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Validador de Clientes</h1>
-        <p>Sube el fichero oficial y el fichero interno para encontrar coincidencias.</p>
-      </header>
-
-      <main className="App-main">
-        <div className="file-uploaders">
-          {/* Usamos tu componente FileUpload para el fichero oficial */}
-          <div className="uploader-container">
-            <h2>Fichero Oficial (centros_C1)</h2>
-            <FileUpload onFileSelect={setFileOficial} />
-          </div>
-          {/* Y otra vez para el fichero interno */}
-          <div className="uploader-container">
-            <h2>Fichero Interno (PRUEBA)</h2>
-            <FileUpload onFileSelect={setFileInterno} />
-          </div>
-        </div>
-
-        <button onClick={handleAnalyzeClick} disabled={!fileOficial || !fileInterno || isLoading}>
-          {isLoading ? 'Analizando, por favor espera...' : 'Analizar Coincidencias'}
-        </button>
-
-        {/* Si hay resultados, mostramos la tabla */}
-        {matches.length > 0 && !isLoading && (
-          <div className="results-container">
-            <h2>Resultados Encontrados ({matches.length})</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Nivel de Confianza</th>
-                  <th>Similitud de Nombre</th>
-                  <th>Nombre Oficial</th>
-                  <th>Nombre Interno</th>
-                  <th>CP Oficial</th>
-                  <th>CP Interno</th>
-                  <th>Teléfono Oficial</th>
-                  <th>Teléfono Interno</th>
-                </tr>
-              </thead>
-              <tbody>
-                {matches.map((match, index) => (
-                  <tr key={index}>
-                    <td>{match.nivel_confianza}</td>
-                    <td>{match.similitud_nombre}%</td>
-                    <td>{match.nombre_oficial}</td>
-                    <td>{match.nombre_interno}</td>
-                    <td>{match.cp_oficial}</td>
-                    <td>{match.cp_interno}</td>
-                    <td>{match.tel_oficial}</td>
-                    <td>{match.tel_interno}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {/* Si no hay resultados después de analizar, mostramos un mensaje */}
-        {matches.length === 0 && !isLoading && fileOficial && fileInterno && (
-             <div className="results-container">
-                <h2>No se encontraron coincidencias con los criterios actuales.</h2>
-             </div>
-        )}
-      </main>
-    </div>
+    <Layout>
+      {renderScreen()}
+    </Layout>
   );
 }
+
+// Nota: Debes crear un componente ProjectNameScreen o integrar la lógica en FileUpload
+const ProjectNameScreen: React.FC<{ onProjectNameSet: (name: string) => void }> = ({ onProjectNameSet }) => {
+    const [name, setName] = useState('');
+    return (
+        <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-lg mx-auto text-center">
+            <h2 className="text-2xl font-bold mb-4">Set Project Name</h2>
+            <p className="text-gray-700 mb-4">Please enter a name for this validation project.</p>
+            <input 
+                type="text" 
+                value={name} 
+                onChange={(e) => setName(e.target.value)} 
+                placeholder="E.g., Client Validation Q3"
+                className="w-full p-2 border rounded-md mb-4"
+            />
+            <button 
+                onClick={() => onProjectNameSet(name)}
+                disabled={!name}
+                className="w-full py-2 px-4 bg-blue-600 text-white rounded-md disabled:bg-gray-400"
+            >
+                Continue
+            </button>
+        </div>
+    );
+};
 
 export default App;
