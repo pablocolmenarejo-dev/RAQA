@@ -6,7 +6,6 @@ import { Client } from '../types';
 import { UploadCloud, FileCheck2, AlertTriangle, History, Eye, User, FileText } from 'lucide-react';
 
 interface FileUploadProps {
-  // Cambiamos onFileLoaded por onFileSelected para manejar el flujo de "nombre de proyecto"
   onFileSelected: (file: File) => void;
   onViewHistory: (report: any) => void;
 }
