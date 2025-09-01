@@ -10,6 +10,8 @@ import ResultsDashboard from './components/ResultsDashboard';
 import Layout from './components/Layout';
 import { enrichClientsWithGeoData, findPotentialMatches } from './services/geminiService';
 import { parseClientFile } from './services/fileParserService';
+
+// CORRECCIÓN: Asegúrate de que la ruta de importación de CSS es correcta
 import './src/index.css';
 
 function App() {
@@ -21,10 +23,11 @@ function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [projectName, setProjectName] = useState<string>('');
   const [username, setUsername] = useState<string | null>(null);
+  const [historicalReport, setHistoricalReport] = useState<any | null>(null);
 
   const handleLoginSuccess = (user: string) => {
     setUsername(user);
-    setAppStatus('project_name');
+    setAppStatus('idle'); // Vuelve a 'idle' para mostrar la pantalla de carga de archivo
   };
 
   const handleFileSelected = (file: File) => {
@@ -54,9 +57,9 @@ function App() {
   };
 
   const processNextClient = async (client: Client, db: { [key: string]: any[] }) => {
+    setAppStatus('validating');
     const matches = await findPotentialMatches(client, db);
     setClients(prev => prev.map(c => c.id === client.id ? { ...c, matches } : c));
-    setAppStatus('validating');
   };
 
   const handleValidationStep = (result: ValidationResult) => {
@@ -78,7 +81,12 @@ function App() {
     setValidationResults([]);
     setSelectedFile(null);
     setProjectName('');
-    setUsername(null);
+    setHistoricalReport(null);
+  };
+
+  const handleViewHistory = (report: any) => {
+    setHistoricalReport(report);
+    setAppStatus('complete');
   };
 
   const renderScreen = () => {
@@ -86,9 +94,19 @@ function App() {
       return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
     }
 
+    if (historicalReport) {
+        return <ResultsDashboard 
+            results={historicalReport.results} 
+            clients={historicalReport.clients} 
+            onReset={handleReset} 
+            isHistoric={true}
+            projectName={historicalReport.projectName}
+        />;
+    }
+
     switch (appStatus) {
       case 'idle':
-        return <FileUpload onFileSelected={handleFileSelected} />;
+        return <FileUpload onFileSelected={handleFileSelected} onViewHistory={handleViewHistory} />;
       case 'project_name':
         return <ProjectNameScreen onProjectNameSet={handleProjectNameSet} />;
       case 'uploading_databases':
@@ -105,7 +123,7 @@ function App() {
           />
         );
       case 'complete':
-        return <ResultsDashboard results={validationResults} clients={clients} onReset={handleReset} projectName={projectName} username={username} />;
+        return <ResultsDashboard results={validationResults} clients={clients} onReset={handleReset} projectName={projectName} username={username} isHistoric={false} />;
       case 'error':
         return (
           <div className="text-center mt-10">
@@ -130,7 +148,6 @@ function App() {
   );
 }
 
-// Nota: Debes crear un componente ProjectNameScreen o integrar la lógica en FileUpload
 const ProjectNameScreen: React.FC<{ onProjectNameSet: (name: string) => void }> = ({ onProjectNameSet }) => {
     const [name, setName] = useState('');
     return (
@@ -146,7 +163,7 @@ const ProjectNameScreen: React.FC<{ onProjectNameSet: (name: string) => void }> 
             />
             <button 
                 onClick={() => onProjectNameSet(name)}
-                disabled={name.trim() === ''} // CÓDIGO CORREGIDO AQUÍ
+                disabled={name.trim() === ''}
                 className="w-full py-2 px-4 bg-blue-600 text-white rounded-md disabled:bg-gray-400"
             >
                 Continue
