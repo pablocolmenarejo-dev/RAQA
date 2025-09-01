@@ -10,7 +10,7 @@ import ResultsDashboard from './components/ResultsDashboard';
 import Layout from './components/Layout';
 import { enrichClientsWithGeoData, findPotentialMatches } from './services/geminiService';
 import { parseClientFile } from './services/fileParserService';
-import './index.css';
+import './src/index.css';
 
 function App() {
   const [appStatus, setAppStatus] = useState<AppStatus>('idle');
