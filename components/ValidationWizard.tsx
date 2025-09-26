@@ -59,18 +59,25 @@ function Donut({
 }
 
 export default function ValidationWizard({ matches, onClose }: Props) {
-  // Defensa: normaliza a array
   const rows = Array.isArray(matches) ? matches : [];
+  console.info("[ValidationWizard] matches recibidos:", rows.length, rows.slice(0, 3));
 
-  // Índice de registro
   const [idx, setIdx] = useState(0);
-  // Estado de validación por índice
   const [statuses, setStatuses] = useState<Record<number, Status>>({});
 
-  // Si cambia la longitud (o es 0), reubicamos el índice para evitar “out of range”
   useEffect(() => {
-    if (rows.length === 0) setIdx(0);
-    else if (idx > rows.length - 1) setIdx(rows.length - 1);
+    // bloqueo del scroll del body mientras el modal esté abierto
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  useEffect(() => {
+    if (rows.length === 0) {
+      setIdx(0);
+    } else if (idx > rows.length - 1) {
+      setIdx(rows.length - 1);
+    }
   }, [rows.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const counters = useMemo(() => {
@@ -85,8 +92,14 @@ export default function ValidationWizard({ matches, onClose }: Props) {
   }, [statuses, rows.length]);
 
   const current = rows[idx];
-  const setStatus = (s: Exclude<Status, undefined>) =>
-    setStatuses(prev => ({ ...prev, [idx]: s }));
+
+  const setStatus = (s: Exclude<Status, undefined>) => {
+    setStatuses(prev => {
+      const next = { ...prev, [idx]: s };
+      console.info(`[ValidationWizard] idx ${idx} -> status ${s}`);
+      return next;
+    });
+  };
 
   const pct = (n: number) => ((n / Math.max(1, rows.length)) * 100).toFixed(0) + "%";
 
@@ -112,6 +125,19 @@ export default function ValidationWizard({ matches, onClose }: Props) {
             <p style={{ marginTop: 8, color: "#b00020" }}>
               No se han recibido coincidencias. Vuelve atrás y ejecuta el matching.
             </p>
+            <pre
+              style={{
+                background: "#0b1021",
+                color: "#cde6ff",
+                padding: 12,
+                borderRadius: 8,
+                maxHeight: 220,
+                overflow: "auto",
+                fontSize: 12,
+              }}
+            >
+{JSON.stringify(matches, null, 2)}
+            </pre>
           </>
         ) : (
           <>
@@ -164,8 +190,9 @@ export default function ValidationWizard({ matches, onClose }: Props) {
                   <p><strong>Fecha última autorización (Y):</strong> {current.MIN_fecha_autoriz}</p>
                   <p><strong>Oferta asistencial (AC):</strong> {current.MIN_oferta_asist}</p>
 
+                  {/* SCORE grande y coloreado */}
                   <div style={{
-                    marginTop: 10, fontSize: 30, fontWeight: 900,
+                    marginTop: 10, fontSize: 34, fontWeight: 900,
                     color:
                       statuses[idx] === "ACCEPTED" ? "#2e7d32" :
                       statuses[idx] === "REJECTED" ? "#c62828" : "#222",
