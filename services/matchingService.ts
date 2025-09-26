@@ -1,5 +1,8 @@
 // services/matchingService.ts
-// Replica la estrategia del script de Python (mapeo por letras, bloqueo y scoring).
+// Estrategia determinista equivalente a tu script Python + detección robusta de columnas del Ministerio.
+// - Mapea columnas por NOMBRE (prioritario) y, si falla, por LETRA (E/M/K/O/N/C/Y/AC).
+// - Bloqueo progresivo: CP → municipio (contains) → sin bloqueo (capado).
+// - Mantiene C/Y/AC, MIN_source y Top-3, con la misma fórmula de SCORE/BONUS que Python.
 
 import type {
   MatchOutput,
@@ -10,7 +13,7 @@ import type {
   PruebaRow,
 } from "@/types";
 
-/* ===================== Parámetros idénticos a Python ===================== */
+/* ===================== Parámetros (idénticos al script) ===================== */
 const THRESHOLD_ALTA = 0.85;
 const THRESHOLD_BAJA = 0.65;
 
@@ -20,6 +23,10 @@ const BONUS_MUN = 0.10;
 
 const W_NAME   = 0.50;
 const W_STREET = 0.35;
+
+// límites cuando relajamos bloqueo
+const MAX_CANDIDATES_NO_BLOCK = 4000; // tope de filas a evaluar sin bloqueo
+const TOPK_PER_ROW = 3;
 
 const STOPWORDS = new Set(["de","del","la","el","los","las","y","en","a","un","una","unos","unas","por","para","al","lo","da","do"]);
 const ABREVIATURAS: Array<[RegExp, string]> = [
@@ -37,7 +44,7 @@ const VIA_TIPOS = new Set([
   "carretera","ctra","partida","ptda","camino","cno","travesia","tv","ronda"
 ]);
 
-/* ===================== Normalización y tokenización ===================== */
+/* ===================== Utils de normalización ===================== */
 function stripAccents(s: string): string {
   return s ? s.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
 }
@@ -47,6 +54,9 @@ function normalizeText(s: unknown): string {
   for (const [pat, repl] of ABREVIATURAS) out = out.replace(pat, repl);
   out = out.replace(/[^\w\s]/g, " ");
   return out.replace(/\s+/g, " ").trim();
+}
+function normHeader(s: string): string {
+  return normalizeText(String(s).replace(/\r?\n+/g, " ").replace(/\s+/g, " ").trim());
 }
 function tokens(s: string): string[] {
   if (!s) return [];
@@ -66,39 +76,32 @@ function extractNumVia(s: string): string | null {
   return null;
 }
 
-/* ===================== Fuzzy ≈ max(token_set_ratio, partial_ratio) ===================== */
-// Aproximación a token_set_ratio: Dice sobre conjuntos de tokens (2*|A∩B| / (|A|+|B|))
-function tokenSetRatioLike(a: string, b: string): number {
-  const A = new Set(tokens(a));
-  const B = new Set(tokens(b));
-  if (A.size === 0 && B.size === 0) return 0;
-  let inter = 0;
-  for (const t of A) if (B.has(t)) inter++;
-  return (2 * inter) / (A.size + B.size);
-}
-// Aproximación a partial_ratio: coincidencia por n-gramas (3) tipo Dice
-function partialRatioLike(a: string, b: string): number {
+/* ===================== Similitud (aprox. a token_set/partial) ===================== */
+function fuzzyRatio(a: string, b: string): number {
+  const ta = new Set(tokens(a));
+  const tb = new Set(tokens(b));
+  let inter = 0; for (const t of ta) if (tb.has(t)) inter++;
+  const union = ta.size + tb.size - inter;
+  const jaccard = union ? inter / union : 0;
+
+  // partial overlap con n-gramas (3)
   const grams = (s: string, n: number) => {
-    const u = normalizeText(s);
-    const out: string[] = [];
+    const u = normalizeText(s); const out: string[] = [];
     for (let i = 0; i + n <= u.length; i++) {
       const g = u.slice(i, i + n);
       if (g.trim()) out.push(g);
     }
     return new Set(out);
   };
-  const A3 = grams(a, 3), B3 = grams(b, 3);
-  if (A3.size === 0 && B3.size === 0) return 0;
-  let inter = 0;
-  for (const g of A3) if (B3.has(g)) inter++;
-  return (2 * inter) / (A3.size + B3.size);
-}
-// Fuzzy final (0..1)
-function fuzzyRatio(a: string, b: string): number {
-  return Math.max(tokenSetRatioLike(a, b), partialRatioLike(a, b));
+  const a3 = grams(a, 3), b3 = grams(b, 3);
+  let inter3 = 0; for (const g of a3) if (b3.has(g)) inter3++;
+  const dice3 = (2 * inter3) / (a3.size + b3.size || 1);
+
+  return Math.max(jaccard, dice3);
 }
 
-/* ===================== Mapeo por letras (fijo) ===================== */
+/* ===================== Detección de columnas del Ministerio ===================== */
+// Mapeo por letras (fallback)
 const MIN_LETTERS: Record<string, string> = {
   nombre_centro: "E",
   via_nombre: "M",
@@ -109,25 +112,67 @@ const MIN_LETTERS: Record<string, string> = {
   fecha_autoriz: "Y",
   oferta_asist: "AC",
 };
-
 function excelColToIndex(letter: string): number {
-  const u = letter.trim().toUpperCase();
-  let idx = 0;
+  const u = letter.trim().toUpperCase(); let idx = 0;
   for (let i = 0; i < u.length; i++) idx = idx * 26 + (u.charCodeAt(i) - 64);
   return idx - 1;
 }
-
-function mapMinisterioColsByLetters(rows: MinisterioRow[]) {
-  const headers = rows && rows.length ? Object.keys(rows[0] as any) : [];
-  const pick = (L: string): string | null => {
+function byLetters(headers: string[]): Record<string, string | null> {
+  const out: Record<string, string | null> = {
+    nombre_centro: null, via_nombre: null, municipio: null, cp: null, via_numero: null,
+    codigo_centro: null, fecha_autoriz: null, oferta_asist: null,
+  };
+  const pick = (L: string) => {
     const i = excelColToIndex(L);
     return (i >= 0 && i < headers.length) ? headers[i] : null;
   };
-  const mm: Record<string, string | null> = {};
-  for (const [k, L] of Object.entries(MIN_LETTERS)) mm[k] = pick(L);
-  // Log de depuración
-  console.info("[matching] Mapeo por letras (índices según orden de cabeceras):", { headers, mm });
-  return mm;
+  for (const [k, L] of Object.entries(MIN_LETTERS)) out[k] = pick(L);
+  return out;
+}
+
+// Mapeo por nombre (prioritario)
+function byNames(headers: string[]): Record<string, string | null> {
+  const H = headers.map(h => ({ raw: h, norm: normHeader(h) }));
+  const find = (pred: (s: string) => boolean): string | null => {
+    const hit = H.find(h => pred(h.norm));
+    return hit ? hit.raw : null;
+  };
+  return {
+    nombre_centro: find(s =>
+      s.includes("nombre") && s.includes("centro")
+    ),
+    via_nombre: find(s =>
+      (s.includes("nombre") && s.includes("via")) || s.includes("direccion") || s.includes("direcion") || s.includes("dir")
+    ),
+    municipio: find(s => s.includes("municipio")),
+    cp: find(s => (s.includes("codigo") && s.includes("postal")) || s === "cp" || s.includes("postal")),
+    via_numero: find(s => s.includes("numero") && s.includes("via")),
+    codigo_centro: find(s =>
+      (s.includes("codigo") && s.includes("centro") && (s.includes("regcess") || s.includes("normalizado"))) ||
+      (s.includes("codigo") && s.includes("centro"))
+    ),
+    fecha_autoriz: find(s =>
+      (s.includes("fecha") && s.includes("ultima") && s.includes("autoriz")) ||
+      (s.includes("fecha") && s.includes("autoriz"))
+    ),
+    oferta_asist: find(s => s.includes("oferta") && s.includes("asist")),
+  };
+}
+
+function mapMinisterioColumns(rows: MinisterioRow[]) {
+  const headers = rows && rows.length ? Object.keys(rows[0] as any) : [];
+  const mapByName = byNames(headers);
+  // ¿cuántas encontró?
+  const foundByName = Object.values(mapByName).filter(Boolean).length;
+
+  if (foundByName >= 5) {
+    console.info("[matching] Ministerio mapeado POR NOMBRE:", mapByName);
+    return mapByName;
+  }
+  // fallback por letras
+  const mapByLet = byLetters(headers);
+  console.info("[matching] Ministerio mapeado POR LETRAS:", mapByLet);
+  return mapByLet;
 }
 
 /* ===================== Mapeo PRUEBA ===================== */
@@ -149,7 +194,7 @@ function mapPruebaCols(rows: PruebaRow[]) {
   };
 }
 
-/* ===================== Scoring (idéntico) ===================== */
+/* ===================== Scoring ===================== */
 function scoreRow(
   name_pru: string,
   name_min: string,
@@ -168,7 +213,7 @@ function scoreRow(
   return Math.max(0, Math.min(1, score));
 }
 
-/* ===================== API principal: 1..N excels ministerio ===================== */
+/* ===================== API principal ===================== */
 export function matchClientsAgainstMinisterios(
   pruebaRows: PruebaRow[],
   ministerios: Record<string, MinisterioRow[]>,
@@ -178,12 +223,11 @@ export function matchClientsAgainstMinisterios(
 
   // Derivados PRUEBA
   const dfp = pruebaRows.map((r) => {
-    const name =
-      [mpr.nombre_1, mpr.nombre_2, mpr.nombre_3]
-        .filter(Boolean)
-        .map((k) => String((r as any)[k as string] ?? ""))
-        .join(" ")
-        .trim();
+    const name = [mpr.nombre_1, mpr.nombre_2, mpr.nombre_3]
+      .filter(Boolean)
+      .map((k) => String((r as any)[k as string] ?? ""))
+      .join(" ")
+      .trim();
 
     const cp = String((r as any)[mpr.cp] ?? "").match(/(\d{5})/)?.[1] ?? "";
     const street = String((r as any)[mpr.street] ?? "");
@@ -203,9 +247,9 @@ export function matchClientsAgainstMinisterios(
   for (const [source, rows] of Object.entries(ministerios)) {
     if (!rows || rows.length === 0) continue;
 
-    const mm = mapMinisterioColsByLetters(rows);
+    const mm = mapMinisterioColumns(rows);
 
-    // Derivados MIN (según mapeo por letras)
+    // Derivados MIN
     const dfm = rows.map((row) => {
       const get = (key: string | null) => (key ? (row as any)[key] : null);
       const nombre = String(get(mm.nombre_centro) ?? "");
@@ -231,29 +275,37 @@ export function matchClientsAgainstMinisterios(
       };
     });
 
-    // Matching fila a fila (bloqueo ESTRICTO como en Python)
+    console.info("[matching] Fuente:", source, "headers:", Object.keys(rows[0] || {}));
+    console.info("[matching] Totales MIN:", dfm.length);
+
+    // Matching fila a fila
     for (const r of dfp) {
-      let cand = dfm;
-      if (r._cp) {
-        cand = cand.filter(m => m._cp === r._cp);
-      }
+      // 1) Bloqueo por CP exacto
+      let cand = r._cp ? dfm.filter(m => m._cp === r._cp) : [];
+      // 2) Si no hay, por municipio (contains; no igualdad exacta)
       if (cand.length === 0 && r._mun) {
-        cand = dfm.filter(m => m._mun === r._mun); // igualdad exacta (no contains)
+        cand = dfm.filter(m => m._mun && m._mun.includes(r._mun));
+      }
+      // 3) Si sigue vacío, sin bloqueo (capado)
+      if (cand.length === 0) {
+        cand = dfm.slice(0, MAX_CANDIDATES_NO_BLOCK);
       }
 
+      // Puntuar
       const scored = cand.map(m => {
         const sc = scoreRow(
           r._name, m._name,
           r._street_core, m._street_core,
           Boolean(r._cp && r._cp === m._cp),
           Boolean(r._num && m._num && String(r._num) === String(m._num)),
-          Boolean(r._mun && r._mun === m._mun)
+          Boolean(r._mun && m._mun && (m._mun === r._mun || m._mun.includes(r._mun)))
         );
         return { sc, m };
       });
 
+      scored.sort((a, b) => b.sc - a.sc);
+
       if (scored.length > 0) {
-        scored.sort((a, b) => b.sc - a.sc);
         const best = scored[0];
 
         // Claves C/Y/AC
@@ -286,7 +338,7 @@ export function matchClientsAgainstMinisterios(
         allMatches.push(rec);
 
         // Top-3
-        for (let i = 0; i < Math.min(3, scored.length); i++) {
+        for (let i = 0; i < Math.min(TOPK_PER_ROW, scored.length); i++) {
           const c = scored[i];
           const cC  = mm.codigo_centro ? (c.m._row as any)[mm.codigo_centro] ?? null : null;
           const cY  = mm.fecha_autoriz ? (c.m._row as any)[mm.fecha_autoriz] ?? null : null;
@@ -310,7 +362,7 @@ export function matchClientsAgainstMinisterios(
           allTop3.push(cand);
         }
       } else {
-        // Sin candidatos (exactamente como tu script)
+        // teórico: si dfm.length==0
         allMatches.push({
           PRUEBA_customer: mpr.customer ? ((r._raw as any)[mpr.customer] ?? null) : null,
           PRUEBA_nombre: r._name,
@@ -318,17 +370,15 @@ export function matchClientsAgainstMinisterios(
           PRUEBA_city: String((r._raw as any)[mpr.city] ?? ""),
           PRUEBA_cp: r._cp || null,
           PRUEBA_num: r._num,
-
           MIN_nombre: null, MIN_via: null, MIN_num: null, MIN_municipio: null, MIN_cp: null,
           MIN_codigo_centro: null, MIN_fecha_autoriz: null, MIN_oferta_asist: null, MIN_source: source,
-
           SCORE: 0, TIER: "SIN",
         });
       }
     }
   }
 
-  // Orden estable por customer y score (como veníamos haciendo)
+  // Orden estable por customer y score
   allMatches.sort((a, b) => {
     const ca = (a.PRUEBA_customer ?? "").localeCompare(b.PRUEBA_customer ?? "");
     if (ca !== 0) return ca;
