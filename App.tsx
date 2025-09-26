@@ -3,28 +3,28 @@ import React, { useState } from "react";
 import DatabaseUploadScreen from "@/components/DatabaseUploadScreen";
 import ResultsDashboard from "@/components/ResultsDashboard";
 import ClientTable from "@/components/ClientTable";
-import ValidationWizard, { Decision, DecisionMap } from "@/components/ValidationWizard";
+import ValidationWizard from "@/components/ValidationWizard";
 import { exportMatchesToExcel } from "@/services/reportGeneratorService";
 import type { MatchOutput } from "@/types";
 
 export default function App() {
   const [result, setResult] = useState<MatchOutput | null>(null);
   const [showWizard, setShowWizard] = useState(false);
-  const [decisions, setDecisions] = useState<DecisionMap>({});
 
   const handleReset = () => {
+    console.info("[App] reset");
     setResult(null);
     setShowWizard(false);
-    setDecisions({});
-  };
-
-  const handleDecide = (idx: number, d: Decision) => {
-    setDecisions((prev) => ({ ...prev, [idx]: d }));
   };
 
   const openValidation = () => {
-    if (!result?.matches?.length) {
-      alert("No hay matches para validar.");
+    console.info("[App] abrir validación, result:", result);
+    if (!result) {
+      alert("No hay resultados de matching todavía.");
+      return;
+    }
+    if (!Array.isArray(result.matches) || result.matches.length === 0) {
+      alert("No hay coincidencias en result.matches. Ejecuta el matching primero.");
       return;
     }
     setShowWizard(true);
@@ -38,10 +38,18 @@ export default function App() {
           Sube tu fichero <strong>PRUEBA.xlsx</strong> y hasta <strong>4 Excel</strong> del Ministerio.
           Calcularemos coincidencias con la metodología determinista (sin IA).
         </p>
-        <DatabaseUploadScreen onResult={setResult} />
+        <DatabaseUploadScreen
+          onResult={(r) => {
+            console.info("[App] onResult recibido:", r);
+            setResult(r);
+          }}
+        />
       </div>
     );
   }
+
+  const matches = Array.isArray(result.matches) ? result.matches : [];
+  console.info("[App] render resultados; matches:", matches.length, "summary:", result.summary);
 
   return (
     <div style={{ padding: 16 }}>
@@ -71,22 +79,27 @@ export default function App() {
         </button>
       </header>
 
+      {/* Resumen + botón Ir a Validación */}
       <ResultsDashboard
         result={result}
         onOpenValidation={openValidation}
       />
 
-      <ClientTable data={result.matches} />
+      {/* Tabla por customer */}
+      <ClientTable data={matches} />
 
+      {/* Asistente de validación */}
       {showWizard && (
         <ValidationWizard
-          matches={result.matches}           {/* ← AQUÍ EL CAMBIO */}
-          decisions={decisions}
-          onDecide={handleDecide}
-          onClose={() => setShowWizard(false)}
+          matches={matches}
+          onClose={() => {
+            console.info("[App] cerrar validación");
+            setShowWizard(false);
+          }}
         />
       )}
 
+      {/* (Opcional) JSON bruto */}
       <details style={{ marginTop: 12 }}>
         <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto</summary>
         <pre
