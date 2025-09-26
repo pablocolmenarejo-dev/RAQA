@@ -1,3 +1,4 @@
+// src/services/matchingService.ts
 import type { MatchOutput, MatchRecord, TopCandidate, PruebaRow, MinisterioAoA } from "@/types";
 
 const THRESHOLD_ALTA = 0.85;
@@ -12,26 +13,84 @@ const ABR: Array<[RegExp,string]> = [
   [/\bc\/\b/g,"calle"], [/\bcl\.\b/g,"calle"], [/\bpº\b/g,"paseo"], [/\bps\.\b/g,"paseo"], [/\bpso\b/g,"paseo"],
   [/\bctra\b/g,"carretera"], [/\bptda\b/g,"partida"], [/\burg\.\b/g,"urbanizacion"],
 ];
-const VIA = new Set(["calle","carrer","avenida","av","avda","paseo","pso","ps","plaza","carretera","ctra","partida","ptda","camino","cno","travesia","tv","ronda"]);
+const VIA = new Set([
+  "calle","carrer","avenida","av","avda","paseo","pso","ps","plaza","carretera","ctra","partida","ptda","camino","cno","travesia","tv","ronda"
+]);
 
-function stripAcc(s:string){return s? s.normalize("NFD").replace(/[\u0300-\u036f]/g,""):"";}
-function normText(s:any){ if(typeof s!=="string") return ""; let x=stripAcc(s.toLowerCase()); for(const [p,r] of ABR) x=x.replace(p,r); x=x.replace(/[^\w\s]/g," "); return x.replace(/\s+/g," ").trim(); }
-function tokens(s:string){ if(!s) return []; const ts=normText(s).split(/[^0-9a-zñ]+/g); return ts.filter(t=>t && (!STOPWORDS.has(t) || /^\d+$/.test(t))); }
-function streetCore(s:string){ return tokens(s).filter(t=>!VIA.has(t)).join(" "); }
-function extractNum(s:string){ const n=normText(s); const m1=/(?:^|\s|,)(\d{1,4})(?:\s*[a-z]?)$/.exec(n); if(m1) return m1[1]; const m2=/(?:nº|no|num|numero)\s*(\d{1,4})/.exec(n); return m2? m2[1]:null; }
+function stripAcc(s:string){ return s ? s.normalize("NFD").replace(/[\u0300-\u036f]/g,"") : ""; }
+function normText(s:any){
+  if(typeof s!=="string") return "";
+  let x = stripAcc(s.toLowerCase());
+  for(const [p,r] of ABR) x = x.replace(p,r);
+  x = x.replace(/[^\w\s]/g," ");
+  return x.replace(/\s+/g," ").trim();
+}
+function tokens(s:string){
+  if(!s) return [];
+  const ts = normText(s).split(/[^0-9a-zñ]+/g);
+  return ts.filter(t => t && (!STOPWORDS.has(t) || /^\d+$/.test(t)));
+}
+function streetCore(s:string){ return tokens(s).filter(t => !VIA.has(t)).join(" "); }
+function extractNum(s:string){
+  const n = normText(s);
+  const m1 = /(?:^|\s|,)(\d{1,4})(?:\s*[a-z]?)$/.exec(n);
+  if(m1) return m1[1];
+  const m2 = /(?:nº|no|num|numero)\s*(\d{1,4})/.exec(n);
+  return m2 ? m2[1] : null;
+}
 
-function tokenSetRatio(a:string,b:string){ const A=new Set(tokens(a)), B=new Set(tokens(b)); if(!A.size&&!B.size) return 0; let inter=0; for(const t of A) if(B.has(t)) inter++; return (2*inter)/(A.size+B.size); }
-function partialLike(a:string,b:string){ const grams=(s:string,n:number)=>{ const u=normText(s); const out:string[]=[]; for(let i=0;i+n<=u.length;i++){ const g=u.slice(i,i+n); if(g.trim()) out.push(g);} return new Set(out); }; const A=grams(a,3), B=grams(b,3); if(!A.size&&!B.size) return 0; let inter=0; for(const g of A) if(B.has(g)) inter++; return (2*inter)/(A.size+B.size); }
+// similitud (aprox. a token_set + partial)
+function tokenSetRatio(a:string,b:string){
+  const A = new Set(tokens(a)), B = new Set(tokens(b));
+  if(!A.size && !B.size) return 0;
+  let inter=0; for(const t of A) if(B.has(t)) inter++;
+  return (2*inter)/(A.size+B.size);
+}
+function partialLike(a:string,b:string){
+  const grams=(s:string,n:number)=>{
+    const u = normText(s); const out:string[]=[];
+    for(let i=0;i+n<=u.length;i++){ const g=u.slice(i,i+n); if(g.trim()) out.push(g); }
+    return new Set(out);
+  };
+  const A=grams(a,3), B=grams(b,3);
+  if(!A.size && !B.size) return 0;
+  let inter=0; for(const g of A) if(B.has(g)) inter++;
+  return (2*inter)/(A.size+B.size);
+}
 function fuzzy(a:string,b:string){ return Math.max(tokenSetRatio(a,b), partialLike(a,b)); }
 
-const MIN_LETTERS={ nombre:"E", via:"M", mun:"K", cp:"O", num:"N", ccn:"C", fecha:"Y", oferta:"AC" } as const;
+// fallback por letra
+const MIN_LETTERS = { nombre:"E", via:"M", mun:"K", cp:"O", num:"N", ccn:"C", fecha:"Y", oferta:"AC" } as const;
 function colIndex(letter:string){ let u=letter.trim().toUpperCase(), idx=0; for(let i=0;i<u.length;i++) idx=idx*26+(u.charCodeAt(i)-64); return idx-1; }
+
+// ——— mapeo por nombre (prioritario) y fallback por letra ———
+function findHeaderIndex(headers:any[], letter:string, predicates: ((s:string)=>boolean)[]): number | null {
+  const H = headers.map(h => normText(String(h??"")));
+  for (let i=0;i<H.length;i++){
+    const h = H[i]; if(!h) continue;
+    if (predicates.some(p => p(h))) return i;
+  }
+  const j = colIndex(letter);
+  return (j>=0 && j<headers.length) ? j : null;
+}
+
+const isNombreCentro = (s:string)=> s.includes("nombre") && s.includes("centro");
+const isNombreVia    = (s:string)=> (s.includes("nombre") && s.includes("via")) || s.includes("direccion") || s.includes("direcion") || s.includes("vía") || s.includes("via ");
+const isMunicipio    = (s:string)=> s.includes("municipio");
+const isCP           = (s:string)=> (s.includes("codigo") && s.includes("postal")) || s==="cp" || s.includes("postal");
+const isNumVia       = (s:string)=> (s.includes("numero") && s.includes("via")) || s.endsWith(" nº") || s.endsWith(" n");
+const isCCN          = (s:string)=> (s.includes("codigo") && s.includes("centro") && (s.includes("regcess") || s.includes("normaliz") || s.includes("normalizado"))) || (s.includes("ccn") && s.includes("codigo"));
+const isFechaUltAut  = (s:string)=> (s.includes("fecha") && s.includes("ultima") && s.includes("autoriz")) || (s.includes("fecha") && s.includes("autoriz"));
+const isOfertaAsist  = (s:string)=> s.includes("oferta") && s.includes("asist");
+
+function safeHeader(headers:any[], i:number|null){ return (i!=null && i>=0 && i<headers.length) ? String(headers[i]) : "(no encontrado)"; }
 
 export function matchClientsAgainstMinisterios(
   pruebaRows: PruebaRow[],
   ministeriosAoA: Record<string, MinisterioAoA>,
 ): MatchOutput {
   // PRUEBA → derivados
+  if(!pruebaRows || pruebaRows.length===0) throw new Error("PRUEBA está vacío.");
   const need = ["INFO_1","STREET","CITY","PostalCode"];
   const cols = new Set(Object.keys(pruebaRows[0]||{}));
   for(const n of need) if(!cols.has(n)) throw new Error(`En PRUEBA falta '${n}'. Columnas: ${Array.from(cols).join(", ")}`);
@@ -57,9 +116,9 @@ export function matchClientsAgainstMinisterios(
   for(const [source, aoa] of Object.entries(ministeriosAoA)){
     if(!aoa || aoa.length===0) continue;
 
-    // 1) Detectar fila de cabeceras (heurística, como en Python)
+    // 1) Detectar fila de cabeceras (heurística estilo Python)
     let headerRowIdx = 0, bestKW=-1;
-    const KEYS=["nombre","centro","municipio","provincia","comunidad","postal","direccion","dirección","via","vía","numero","número"];
+    const KEYS=["nombre","centro","municipio","provincia","comunidad","postal","direccion","dirección","via","vía","numero","número","regcess"];
     for(let i=0;i<Math.min(30, aoa.length); i++){
       const row = aoa[i] || [];
       const text = normText((row||[]).join(" "));
@@ -69,20 +128,34 @@ export function matchClientsAgainstMinisterios(
     const headers = aoa[headerRowIdx] || [];
     const body = aoa.slice(headerRowIdx+1).filter(r=> Array.isArray(r) && r.some(v=>v!==null && v!==""));
 
-    // 2) Índices por letra
+    // 2) Índices por NOMBRE (prioritario) con fallback por letra
     const idx = {
-      nombre: colIndex(MIN_LETTERS.nombre),
-      via:    colIndex(MIN_LETTERS.via),
-      mun:    colIndex(MIN_LETTERS.mun),
-      cp:     colIndex(MIN_LETTERS.cp),
-      num:    colIndex(MIN_LETTERS.num),
-      ccn:    colIndex(MIN_LETTERS.ccn),
-      fecha:  colIndex(MIN_LETTERS.fecha),
-      oferta: colIndex(MIN_LETTERS.oferta),
+      nombre: findHeaderIndex(headers, MIN_LETTERS.nombre, [isNombreCentro]),
+      via:    findHeaderIndex(headers, MIN_LETTERS.via,    [isNombreVia]),
+      mun:    findHeaderIndex(headers, MIN_LETTERS.mun,    [isMunicipio]),
+      cp:     findHeaderIndex(headers, MIN_LETTERS.cp,     [isCP]),
+      num:    findHeaderIndex(headers, MIN_LETTERS.num,    [isNumVia]),
+      ccn:    findHeaderIndex(headers, MIN_LETTERS.ccn,    [isCCN]),
+      fecha:  findHeaderIndex(headers, MIN_LETTERS.fecha,  [isFechaUltAut]),
+      oferta: findHeaderIndex(headers, MIN_LETTERS.oferta, [isOfertaAsist]),
     };
-    const inb = (i:number)=> i>=0 && i < headers.length;
+
+    // Logs de verificación (mira consola del navegador)
+    console.info(`[matching][${source}] headerRowIdx=${headerRowIdx}`);
+    console.info(`[matching][${source}] nombre:`, safeHeader(headers, idx.nombre));
+    console.info(`[matching][${source}] via:   `, safeHeader(headers, idx.via));
+    console.info(`[matching][${source}] mun:   `, safeHeader(headers, idx.mun));
+    console.info(`[matching][${source}] cp:    `, safeHeader(headers, idx.cp));
+    console.info(`[matching][${source}] num:   `, safeHeader(headers, idx.num));
+    console.info(`[matching][${source}] CCN:   `, safeHeader(headers, idx.ccn));
+    console.info(`[matching][${source}] fecha: `, safeHeader(headers, idx.fecha));
+    console.info(`[matching][${source}] oferta:`, safeHeader(headers, idx.oferta));
+
+    const inb = (i:number|null)=> i!=null && i>=0 && i < headers.length;
+
+    // 3) Construcción de dfm (normalizaciones como en Python)
     const dfm = body.map(row=>{
-      const g = (i:number)=> inb(i)? row[i] : null;
+      const g = (i:number|null)=> inb(i)? row[i as number] : null;
       const nombre = String(g(idx.nombre) ?? "");
       const via    = String(g(idx.via) ?? "");
       const mun    = String(g(idx.mun) ?? "");
@@ -90,12 +163,14 @@ export function matchClientsAgainstMinisterios(
       const cp     = cpRaw.match(/(\d{5})/)?.[1] ?? "";
       const numRaw = String(g(idx.num) ?? "");
       const num    = (normText(numRaw).match(/(\d{1,4})/)||[])[1] || null;
+
       return {
         _name: normText(nombre),
         _street_core: streetCore(via),
         _mun: normText(mun),
         _cp: cp,
         _num: num,
+
         _viaRaw: g(idx.via),
         _munRaw: g(idx.mun),
         _ccn: g(idx.ccn),
@@ -104,13 +179,15 @@ export function matchClientsAgainstMinisterios(
       };
     });
 
-    // 3) Matching (bloqueo CP → municipio; contains en ambos sentidos)
+    // 4) Matching (bloqueo CP → municipio; contains en ambos sentidos)
     for(const r of dfp){
       let cand = r._cp ? dfm.filter(m=> m._cp === r._cp) : [];
       if(cand.length===0 && r._mun){
         cand = dfm.filter(m=> m._mun && (m._mun===r._mun || m._mun.includes(r._mun) || r._mun.includes(m._mun)));
       }
-      if(cand.length===0){ cand = dfm.slice(0, Math.min(4000, dfm.length)); }
+      if(cand.length===0){
+        cand = dfm.slice(0, Math.min(4000, dfm.length)); // cap
+      }
 
       const scored = cand.map(m=>{
         let s = W_NAME*fuzzy(r._name, m._name) + W_STREET*fuzzy(r._street_core, m._street_core);
