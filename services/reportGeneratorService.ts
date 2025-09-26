@@ -1,89 +1,160 @@
-import { Client, ValidationResult } from '../types';
+// services/reportGeneratorService.ts
+// Exportación a Excel de resultados: Matches y Top-3 candidatos
 
-declare const XLSX: any;
-declare const html2canvas: any;
+import type { MatchOutput, MatchRecord, TopCandidate } from "@/types";
 
-export const generatePdfReport = async () => {
-  const reportElement = document.getElementById('report-content');
-  if (!reportElement) {
-    console.error("No se pudo encontrar el elemento del informe para capturar.");
-    return;
-  }
+let XLSXRef: any;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  XLSXRef = require("xlsx");
+} catch {
+  // @ts-ignore
+  XLSXRef = (window as any).XLSX;
+}
+if (!XLSXRef) {
+  throw new Error(
+    'No se encontró la librería XLSX. Instala "xlsx" (npm i xlsx) o inclúyela en index.html como <script src="...xlsx.full.min.js"></script>.'
+  );
+}
 
-  // Ocultar los botones temporalmente para que no aparezcan en la captura
-  const buttons = reportElement.querySelectorAll('button');
-  buttons.forEach(btn => btn.style.visibility = 'hidden');
-
-  try {
-    const canvas = await html2canvas(reportElement, {
-      scale: 2, // Aumenta la resolución de la captura para mayor calidad
-      useCORS: true,
-      backgroundColor: '#ffffff', // Fondo blanco para la captura
+function toSheet(data: any[], headerOrder?: string[]) {
+  // Si pasamos headerOrder, la usamos para fijar el orden de columnas
+  if (headerOrder && headerOrder.length) {
+    const normalized = data.map((row) => {
+      const out: Record<string, any> = {};
+      for (const key of headerOrder) out[key] = (row as any)[key] ?? null;
+      return out;
     });
-
-    const imgData = canvas.toDataURL('image/png');
-
-    // **LA CORRECCIÓN CLAVE ESTÁ AQUÍ**
-    // Se accede al constructor jsPDF directamente desde el objeto global window.jspdf
-    const { jsPDF } = (window as any).jspdf;
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
-
-    const pdfWidth = doc.internal.pageSize.getWidth();
-    const pdfHeight = doc.internal.pageSize.getHeight();
-    const canvasWidth = canvas.width;
-    const canvasHeight = canvas.height;
-    
-    // Calcular la relación de aspecto para que la imagen no se deforme
-    const ratio = canvasWidth / canvasHeight;
-    const finalHeight = pdfWidth / ratio;
-
-    // Comprobamos que la altura no exceda la del PDF para evitar errores
-    const pageHeight = doc.internal.pageSize.getHeight();
-    if (finalHeight > pageHeight) {
-      console.warn("El contenido es más largo que una página A4, puede que se corte.");
-    }
-
-    doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight > pageHeight ? pageHeight : finalHeight);
-    doc.save('Meisys_Client_Validation_Report.pdf');
-
-  } catch (error) {
-    console.error("Error al generar el PDF:", error);
-  } finally {
-    // Asegurarnos de que los botones siempre vuelvan a ser visibles, incluso si hay un error
-    buttons.forEach(btn => btn.style.visibility = 'visible');
+    return XLSXRef.utils.json_to_sheet(normalized, { skipHeader: false, header: headerOrder });
   }
-};
+  return XLSXRef.utils.json_to_sheet(data);
+}
 
-export const generateExcelReport = (results: ValidationResult[], clients: Client[]) => {
-  const clientMap = new Map(clients.map(c => [c.id, c]));
+function downloadWorkbook(wb: any, filename: string) {
+  XLSXRef.writeFile(wb, filename, { compression: true });
+}
 
-  const dataForSheet = results.map(result => {
-    const client = clientMap.get(result.clientId);
-    return {
-      'Client ID': client?.id,
-      'Input Street': client?.STREET,
-      'Input City': client?.CITY,
-      'Input Info 1': client?.INFO_1,
-      'Input Info 2': client?.INFO_2,
-      'Input CIF/NIF': client?.CIF_NIF,
-      'Enriched Province': client?.PROVINCIA,
-      'Enriched CCAA': client?.CCAA,
-      'Validation Status': result.status,
-      'Validation Reason': result.reason,
-      'Official Name Found': result.officialData?.officialName,
-      'Official Address Found': result.officialData?.officialAddress,
-      'Official CIF Found': result.officialData?.cif,
-      'Source Database': result.officialData?.sourceDB,
-      'Evidence URL': result.officialData?.evidenceUrl,
-    };
-  });
+function fmtDateForFilename(d = new Date()) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
 
-  const ws = XLSX.utils.json_to_sheet(dataForSheet);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Validation Results");
-  XLSX.writeFile(wb, "Meisys_Client_Validation_Report.xlsx");
-};
+/**
+ * Genera un Excel con dos hojas:
+ *  - "Matches": mejor coincidencia por fila de PRUEBA (SCORE/TIER + columnas C/Y/AC + MIN_source)
+ *  - "Top3": hasta 3 candidatos por fila (ordenados por score)
+ */
+export function exportMatchesToExcel(result: MatchOutput, filename?: string) {
+  const wb = XLSXRef.utils.book_new();
+
+  // -------- Hoja 1: Matches --------
+  const matchesHeader = [
+    // PRUEBA
+    "PRUEBA_customer",
+    "PRUEBA_nombre",
+    "PRUEBA_street",
+    "PRUEBA_city",
+    "PRUEBA_cp",
+    "PRUEBA_num",
+    // MIN (best)
+    "MIN_nombre",
+    "MIN_via",
+    "MIN_num",
+    "MIN_municipio",
+    "MIN_cp",
+    // Claves + fuente
+    "MIN_codigo_centro", // C
+    "MIN_fecha_autoriz", // Y
+    "MIN_oferta_asist",  // AC
+    "MIN_source",
+    // Scoring
+    "SCORE",
+    "TIER"
+  ];
+
+  const matchesRows = result.matches.map((m: MatchRecord) => ({
+    PRUEBA_customer: m.PRUEBA_customer ?? "",
+    PRUEBA_nombre: m.PRUEBA_nombre,
+    PRUEBA_street: m.PRUEBA_street,
+    PRUEBA_city: m.PRUEBA_city,
+    PRUEBA_cp: m.PRUEBA_cp ?? "",
+    PRUEBA_num: m.PRUEBA_num ?? "",
+    MIN_nombre: m.MIN_nombre ?? "",
+    MIN_via: m.MIN_via ?? "",
+    MIN_num: m.MIN_num ?? "",
+    MIN_municipio: m.MIN_municipio ?? "",
+    MIN_cp: m.MIN_cp ?? "",
+    MIN_codigo_centro: m.MIN_codigo_centro ?? "",
+    MIN_fecha_autoriz: m.MIN_fecha_autoriz ?? "",
+    MIN_oferta_asist: m.MIN_oferta_asist ?? "",
+    MIN_source: m.MIN_source ?? "",
+    SCORE: Number(m.SCORE?.toFixed?.(4) ?? m.SCORE),
+    TIER: m.TIER
+  }));
+
+  const shMatches = toSheet(matchesRows, matchesHeader);
+  XLSXRef.utils.book_append_sheet(wb, shMatches, "Matches");
+
+  // Auto width simple
+  autoFitColumns(shMatches, matchesRows);
+
+  // -------- Hoja 2: Top3 --------
+  const topHeader = [
+    // PRUEBA contexto
+    "PRUEBA_nombre",
+    "PRUEBA_cp",
+    "PRUEBA_num",
+    // Candidato
+    "CAND_RANK",
+    "CAND_SCORE",
+    "CAND_MIN_nombre",
+    "CAND_MIN_via",
+    "CAND_MIN_num",
+    "CAND_MIN_mun",
+    "CAND_MIN_cp",
+    "CAND_MIN_codigo_centro", // C
+    "CAND_MIN_fecha_autoriz", // Y
+    "CAND_MIN_oferta_asist",  // AC
+    "CAND_MIN_source"
+  ];
+
+  const topRows = result.top3.map((t: TopCandidate) => ({
+    PRUEBA_nombre: t.PRUEBA_nombre,
+    PRUEBA_cp: t.PRUEBA_cp ?? "",
+    PRUEBA_num: t.PRUEBA_num ?? "",
+    CAND_RANK: t.CAND_RANK,
+    CAND_SCORE: Number(t.CAND_SCORE?.toFixed?.(4) ?? t.CAND_SCORE),
+    CAND_MIN_nombre: t.CAND_MIN_nombre ?? "",
+    CAND_MIN_via: t.CAND_MIN_via ?? "",
+    CAND_MIN_num: t.CAND_MIN_num ?? "",
+    CAND_MIN_mun: t.CAND_MIN_mun ?? "",
+    CAND_MIN_cp: t.CAND_MIN_cp ?? "",
+    CAND_MIN_codigo_centro: t.CAND_MIN_codigo_centro ?? "",
+    CAND_MIN_fecha_autoriz: t.CAND_MIN_fecha_autoriz ?? "",
+    CAND_MIN_oferta_asist: t.CAND_MIN_oferta_asist ?? "",
+    CAND_MIN_source: t.CAND_MIN_source ?? "",
+  }));
+
+  const shTop = toSheet(topRows, topHeader);
+  XLSXRef.utils.book_append_sheet(wb, shTop, "Top3");
+  autoFitColumns(shTop, topRows);
+
+  // -------- Guardar --------
+  const fname = filename || `matches_${fmtDateForFilename()}.xlsx`;
+  downloadWorkbook(wb, fname);
+}
+
+// Ajuste básico de ancho de columnas según el contenido
+function autoFitColumns(sheet: any, rows: any[]) {
+  const obj = XLSXRef.utils.sheet_to_json(sheet, { header: 1 });
+  const colCount = (obj[0] || []).length;
+  const colWidths = Array(colCount).fill(10);
+
+  for (const r of obj) {
+    r.forEach((val: any, i: number) => {
+      const len = String(val ?? "").length;
+      colWidths[i] = Math.max(colWidths[i], Math.min(len + 2, 60)); // tope 60
+    });
+  }
+  sheet["!cols"] = colWidths.map((wch: number) => ({ wch }));
+}
