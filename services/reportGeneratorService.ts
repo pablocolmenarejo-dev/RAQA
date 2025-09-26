@@ -1,15 +1,21 @@
-// services/reportGeneratorService.ts
-// Exportación a Excel de resultados: Matches y Top-3 candidatos
+// src/services/reportGeneratorService.ts
+// Exporta a Excel la tabla visible de matches, incluyendo la columna "Validación".
+// Usa SheetJS (xlsx). Detecta la librería tanto si está instalada por npm como si viene por <script>.
 
-import type { MatchOutput, MatchRecord, TopCandidate } from "@/types";
+import type { MatchOutput, MatchRecord } from "@/types";
 
+// ── Tipos de validación (deben coincidir con la app)
+export type Decision = "ACCEPTED" | "REJECTED" | "STANDBY";
+export type DecisionMap = Record<string, Decision | undefined>;
+
+// Robust import de XLSX
 let XLSXRef: any;
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  XLSXRef = require("xlsx");
+  XLSXRef = require("xlsx");         // npm i xlsx
 } catch {
   // @ts-ignore
-  XLSXRef = (window as any).XLSX;
+  XLSXRef = (window as any).XLSX;    // inyectado vía <script>
 }
 if (!XLSXRef) {
   throw new Error(
@@ -17,144 +23,101 @@ if (!XLSXRef) {
   );
 }
 
-function toSheet(data: any[], headerOrder?: string[]) {
-  // Si pasamos headerOrder, la usamos para fijar el orden de columnas
-  if (headerOrder && headerOrder.length) {
-    const normalized = data.map((row) => {
-      const out: Record<string, any> = {};
-      for (const key of headerOrder) out[key] = (row as any)[key] ?? null;
-      return out;
-    });
-    return XLSXRef.utils.json_to_sheet(normalized, { skipHeader: false, header: headerOrder });
-  }
-  return XLSXRef.utils.json_to_sheet(data);
+/** Clave estable para emparejar un match con su decisión guardada */
+function makeMatchKey(m: MatchRecord): string {
+  return [
+    m.PRUEBA_customer ?? "",
+    m.PRUEBA_nombre ?? "",
+    m.PRUEBA_cp ?? "",
+    m.MIN_codigo_centro ?? "",
+    m.MIN_source ?? "",
+  ].join(" | ");
 }
 
-function downloadWorkbook(wb: any, filename: string) {
-  XLSXRef.writeFile(wb, filename, { compression: true });
+/** Mapea código interno → etiqueta para Excel */
+function decisionLabel(d?: Decision): string {
+  if (d === "ACCEPTED") return "ACEPTADA";
+  if (d === "REJECTED") return "RECHAZADA";
+  if (d === "STANDBY")  return "STANDBY";
+  return ""; // sin validar
 }
 
-function fmtDateForFilename(d = new Date()) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
-}
-
-/**
- * Genera un Excel con dos hojas:
- *  - "Matches": mejor coincidencia por fila de PRUEBA (SCORE/TIER + columnas C/Y/AC + MIN_source)
- *  - "Top3": hasta 3 candidatos por fila (ordenados por score)
- */
-export function exportMatchesToExcel(result: MatchOutput, filename?: string) {
-  const wb = XLSXRef.utils.book_new();
-
-  // -------- Hoja 1: Matches --------
-  const matchesHeader = [
-    // PRUEBA
-    "PRUEBA_customer",
+/** Exporta la tabla de resultados “tal cual se ve”, en el mismo orden de columnas + Validación */
+export function exportMatchesToExcel(
+  result: MatchOutput,
+  decisions: DecisionMap = {},
+  filename = "matches.xlsx"
+) {
+  const headers = [
     "PRUEBA_nombre",
     "PRUEBA_street",
     "PRUEBA_city",
     "PRUEBA_cp",
-    "PRUEBA_num",
-    // MIN (best)
     "MIN_nombre",
     "MIN_via",
     "MIN_num",
     "MIN_municipio",
     "MIN_cp",
-    // Claves + fuente
-    "MIN_codigo_centro", // C
-    "MIN_fecha_autoriz", // Y
-    "MIN_oferta_asist",  // AC
-    "MIN_source",
-    // Scoring
     "SCORE",
-    "TIER"
+    "TIER",
+    "Fuente",
+    "Código centro (C)",
+    "Fecha última aut. (Y)",
+    "Oferta asistencial (AC)",
+    "Validación",
   ];
 
-  const matchesRows = result.matches.map((m: MatchRecord) => ({
-    PRUEBA_customer: m.PRUEBA_customer ?? "",
-    PRUEBA_nombre: m.PRUEBA_nombre,
-    PRUEBA_street: m.PRUEBA_street,
-    PRUEBA_city: m.PRUEBA_city,
-    PRUEBA_cp: m.PRUEBA_cp ?? "",
-    PRUEBA_num: m.PRUEBA_num ?? "",
-    MIN_nombre: m.MIN_nombre ?? "",
-    MIN_via: m.MIN_via ?? "",
-    MIN_num: m.MIN_num ?? "",
-    MIN_municipio: m.MIN_municipio ?? "",
-    MIN_cp: m.MIN_cp ?? "",
-    MIN_codigo_centro: m.MIN_codigo_centro ?? "",
-    MIN_fecha_autoriz: m.MIN_fecha_autoriz ?? "",
-    MIN_oferta_asist: m.MIN_oferta_asist ?? "",
-    MIN_source: m.MIN_source ?? "",
-    SCORE: Number(m.SCORE?.toFixed?.(4) ?? m.SCORE),
-    TIER: m.TIER
-  }));
+  // Construimos filas en el orden exacto de headers
+  const rows = (result?.matches ?? []).map((m) => {
+    const key = makeMatchKey(m);
+    const val = decisionLabel(decisions[key]);
 
-  const shMatches = toSheet(matchesRows, matchesHeader);
-  XLSXRef.utils.book_append_sheet(wb, shMatches, "Matches");
+    const row: Record<string, any> = {
+      "PRUEBA_nombre":          m.PRUEBA_nombre ?? "",
+      "PRUEBA_street":          m.PRUEBA_street ?? "",
+      "PRUEBA_city":            m.PRUEBA_city ?? "",
+      "PRUEBA_cp":              m.PRUEBA_cp ?? "",
+      "MIN_nombre":             m.MIN_nombre ?? "",
+      "MIN_via":                m.MIN_via ?? "",
+      "MIN_num":                m.MIN_num ?? "",
+      "MIN_municipio":          m.MIN_municipio ?? "",
+      "MIN_cp":                 m.MIN_cp ?? "",
+      "SCORE":                  typeof m.SCORE === "number" ? m.SCORE.toFixed(3) : "",
+      "TIER":                   m.TIER ?? "",
+      "Fuente":                 m.MIN_source ?? "",
+      "Código centro (C)":      m.MIN_codigo_centro ?? "",
+      "Fecha última aut. (Y)":  m.MIN_fecha_autoriz ?? "",
+      "Oferta asistencial (AC)":m.MIN_oferta_asist ?? "",
+      "Validación":             val,
+    };
+    return row;
+  });
 
-  // Auto width simple
-  autoFitColumns(shMatches, matchesRows);
+  // Hoja con cabecera en AOA para fijar el orden
+  const ws = XLSXRef.utils.aoa_to_sheet([headers]);
+  XLSXRef.utils.sheet_add_json(ws, rows, { origin: "A2", skipHeader: true });
 
-  // -------- Hoja 2: Top3 --------
-  const topHeader = [
-    // PRUEBA contexto
-    "PRUEBA_nombre",
-    "PRUEBA_cp",
-    "PRUEBA_num",
-    // Candidato
-    "CAND_RANK",
-    "CAND_SCORE",
-    "CAND_MIN_nombre",
-    "CAND_MIN_via",
-    "CAND_MIN_num",
-    "CAND_MIN_mun",
-    "CAND_MIN_cp",
-    "CAND_MIN_codigo_centro", // C
-    "CAND_MIN_fecha_autoriz", // Y
-    "CAND_MIN_oferta_asist",  // AC
-    "CAND_MIN_source"
+  // Ancho de columnas (aproximado para legibilidad)
+  ws["!cols"] = [
+    { wch: 42 }, // PRUEBA_nombre
+    { wch: 26 }, // PRUEBA_street
+    { wch: 18 }, // PRUEBA_city
+    { wch: 10 }, // PRUEBA_cp
+    { wch: 40 }, // MIN_nombre
+    { wch: 22 }, // MIN_via
+    { wch: 8  }, // MIN_num
+    { wch: 16 }, // MIN_municipio
+    { wch: 10 }, // MIN_cp
+    { wch: 8  }, // SCORE
+    { wch: 10 }, // TIER
+    { wch: 16 }, // Fuente
+    { wch: 16 }, // Código centro
+    { wch: 16 }, // Fecha última aut.
+    { wch: 60 }, // Oferta asistencial
+    { wch: 12 }, // Validación
   ];
 
-  const topRows = result.top3.map((t: TopCandidate) => ({
-    PRUEBA_nombre: t.PRUEBA_nombre,
-    PRUEBA_cp: t.PRUEBA_cp ?? "",
-    PRUEBA_num: t.PRUEBA_num ?? "",
-    CAND_RANK: t.CAND_RANK,
-    CAND_SCORE: Number(t.CAND_SCORE?.toFixed?.(4) ?? t.CAND_SCORE),
-    CAND_MIN_nombre: t.CAND_MIN_nombre ?? "",
-    CAND_MIN_via: t.CAND_MIN_via ?? "",
-    CAND_MIN_num: t.CAND_MIN_num ?? "",
-    CAND_MIN_mun: t.CAND_MIN_mun ?? "",
-    CAND_MIN_cp: t.CAND_MIN_cp ?? "",
-    CAND_MIN_codigo_centro: t.CAND_MIN_codigo_centro ?? "",
-    CAND_MIN_fecha_autoriz: t.CAND_MIN_fecha_autoriz ?? "",
-    CAND_MIN_oferta_asist: t.CAND_MIN_oferta_asist ?? "",
-    CAND_MIN_source: t.CAND_MIN_source ?? "",
-  }));
-
-  const shTop = toSheet(topRows, topHeader);
-  XLSXRef.utils.book_append_sheet(wb, shTop, "Top3");
-  autoFitColumns(shTop, topRows);
-
-  // -------- Guardar --------
-  const fname = filename || `matches_${fmtDateForFilename()}.xlsx`;
-  downloadWorkbook(wb, fname);
-}
-
-// Ajuste básico de ancho de columnas según el contenido
-function autoFitColumns(sheet: any, rows: any[]) {
-  const obj = XLSXRef.utils.sheet_to_json(sheet, { header: 1 });
-  const colCount = (obj[0] || []).length;
-  const colWidths = Array(colCount).fill(10);
-
-  for (const r of obj) {
-    r.forEach((val: any, i: number) => {
-      const len = String(val ?? "").length;
-      colWidths[i] = Math.max(colWidths[i], Math.min(len + 2, 60)); // tope 60
-    });
-  }
-  sheet["!cols"] = colWidths.map((wch: number) => ({ wch }));
+  const wb = XLSXRef.utils.book_new();
+  XLSXRef.utils.book_append_sheet(wb, ws, "Resultados");
+  XLSXRef.writeFile(wb, filename);
 }
