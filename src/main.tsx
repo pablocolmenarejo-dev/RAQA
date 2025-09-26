@@ -1,10 +1,11 @@
-import React from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App'
+// src/main.tsx
+import React from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App"; // ¡ojo a la A mayúscula!
 
-const el = document.getElementById('root')!
+const el = document.getElementById("root")!;
 createRoot(el).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
-)
+);
