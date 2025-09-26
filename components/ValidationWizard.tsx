@@ -1,79 +1,163 @@
 // src/components/ValidationWizard.tsx
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { MatchRecord } from "@/types";
-import { Pie } from "react-chartjs-2";
+
+type Status = "ACCEPTED" | "REJECTED" | "STANDBY" | undefined;
 
 interface Props {
   matches: MatchRecord[];
   onClose: () => void;
 }
 
+/* ───────────────── Helpers donut SVG (sin dependencias) ───────────────── */
+const COLORS = {
+  accepted: "#4CAF50", // verde
+  standby:  "#FFC107", // amarillo
+  rejected: "#F44336", // rojo
+  pending:  "#9E9E9E", // gris
+};
+
+function Donut({
+  accepted,
+  standby,
+  rejected,
+  pending,
+  size = 180,
+  stroke = 22,
+}: {
+  accepted: number; standby: number; rejected: number; pending: number;
+  size?: number; stroke?: number;
+}) {
+  const total = Math.max(1, accepted + standby + rejected + pending);
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  const segs = [
+    { value: accepted, color: COLORS.accepted, label: "Aceptadas" },
+    { value: standby,  color: COLORS.standby,  label: "StandBy" },
+    { value: rejected, color: COLORS.rejected, label: "Rechazadas" },
+    { value: pending,  color: COLORS.pending,  label: "Pendientes" },
+  ];
+
+  let offset = 0;
+  const arcs = segs.map((s, i) => {
+    const frac = s.value / total;
+    const len  = circumference * frac;
+    const dasharray = `${len} ${circumference - len}`;
+    const el = (
+      <circle
+        key={i}
+        r={radius}
+        cx={size / 2}
+        cy={size / 2}
+        fill="transparent"
+        stroke={s.color}
+        strokeWidth={stroke}
+        strokeDasharray={dasharray}
+        strokeDashoffset={-offset}
+        style={{ transition: "stroke-dasharray .3s" }}
+      />
+    );
+    offset += len;
+    return el;
+  });
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Distribución de estados">
+      <circle
+        r={radius}
+        cx={size / 2}
+        cy={size / 2}
+        fill="transparent"
+        stroke="#eee"
+        strokeWidth={stroke}
+      />
+      {arcs}
+      {/* agujero interior visual */}
+      <circle cx={size/2} cy={size/2} r={radius - stroke/2} fill="#fff" />
+    </svg>
+  );
+}
+/* ──────────────────────────────────────────────────────────────────────── */
+
 export default function ValidationWizard({ matches, onClose }: Props) {
   const [idx, setIdx] = useState(0);
-  const [statuses, setStatuses] = useState<Record<number, "ACCEPTED" | "REJECTED" | "STANDBY" | undefined>>({});
+  const [statuses, setStatuses] = useState<Record<number, Status>>({});
 
-  const handleSet = (status: "ACCEPTED" | "REJECTED" | "STANDBY") => {
-    setStatuses(prev => ({ ...prev, [idx]: status }));
-  };
-
-  const accepted = Object.values(statuses).filter(s => s === "ACCEPTED").length;
-  const rejected = Object.values(statuses).filter(s => s === "REJECTED").length;
-  const standby  = Object.values(statuses).filter(s => s === "STANDBY").length;
-  const pending  = matches.length - accepted - rejected - standby;
+  const counters = useMemo(() => {
+    let acc = 0, rej = 0, stb = 0;
+    for (const s of Object.values(statuses)) {
+      if (s === "ACCEPTED") acc++;
+      else if (s === "REJECTED") rej++;
+      else if (s === "STANDBY")  stb++;
+    }
+    const pending = matches.length - acc - rej - stb;
+    return { acc, rej, stb, pending };
+  }, [statuses, matches.length]);
 
   const current = matches[idx];
 
-  const pieData = {
-    labels: ["Aceptadas", "StandBy", "Rechazadas", "Pendientes"],
-    datasets: [{
-      data: [accepted, standby, rejected, pending],
-      backgroundColor: ["#4CAF50", "#FFC107", "#F44336", "#9E9E9E"],
-    }],
-  };
+  const setStatus = (status: Exclude<Status, undefined>) =>
+    setStatuses(prev => ({ ...prev, [idx]: status }));
+
+  const pct = (n: number) => ((n / Math.max(1, matches.length)) * 100).toFixed(0) + "%";
 
   return (
     <div
       style={{
-        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-        background: "rgba(0,0,0,0.6)", display: "flex", justifyContent: "center", alignItems: "center",
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,0.6)",
+        display: "flex", justifyContent: "center", alignItems: "center",
         zIndex: 9999, overflowY: "auto",
       }}
     >
       <div
         style={{
-          background: "#fff", borderRadius: 12, padding: 24, width: "90%", maxWidth: 900,
+          background: "#fff", borderRadius: 12, padding: 24, width: "90%", maxWidth: 980,
           boxShadow: "0 4px 20px rgba(0,0,0,0.3)", position: "relative",
         }}
       >
         <button
           onClick={onClose}
-          style={{ position: "absolute", top: 12, right: 12, padding: "4px 8px", cursor: "pointer" }}
+          style={{ position: "absolute", top: 12, right: 12, padding: "6px 10px", cursor: "pointer" }}
         >
           Cerrar
         </button>
 
         <h2 style={{ marginTop: 0 }}>Validación de coincidencias</h2>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 20 }}>
-          <div style={{ width: 180, height: 180 }}>
-            <Pie data={pieData} />
-          </div>
+        {/* Resumen con donut */}
+        <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 18 }}>
           <div>
-            <p><strong>Aceptadas:</strong> {accepted} ({((accepted / matches.length) * 100).toFixed(0)}%)</p>
-            <p><strong>StandBy:</strong> {standby} ({((standby / matches.length) * 100).toFixed(0)}%)</p>
-            <p><strong>Rechazadas:</strong> {rejected} ({((rejected / matches.length) * 100).toFixed(0)}%)</p>
-            <p><strong>Pendientes:</strong> {pending} ({((pending / matches.length) * 100).toFixed(0)}%)</p>
+            <Donut
+              accepted={counters.acc}
+              standby={counters.stb}
+              rejected={counters.rej}
+              pending={counters.pending}
+              size={180}
+              stroke={22}
+            />
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.8 }}>
+            <div><span style={{ display: "inline-block", width: 10, height: 10, background: COLORS.accepted, marginRight: 8, borderRadius: 2 }} />
+              <b>Aceptadas:</b> {counters.acc} ({pct(counters.acc)})</div>
+            <div><span style={{ display: "inline-block", width: 10, height: 10, background: COLORS.standby,  marginRight: 8, borderRadius: 2 }} />
+              <b>StandBy:</b> {counters.stb} ({pct(counters.stb)})</div>
+            <div><span style={{ display: "inline-block", width: 10, height: 10, background: COLORS.rejected, marginRight: 8, borderRadius: 2 }} />
+              <b>Rechazadas:</b> {counters.rej} ({pct(counters.rej)})</div>
+            <div><span style={{ display: "inline-block", width: 10, height: 10, background: COLORS.pending,  marginRight: 8, borderRadius: 2 }} />
+              <b>Pendientes:</b> {counters.pending} ({pct(counters.pending)})</div>
           </div>
         </div>
 
-        <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
+        <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 14 }}>
           Registro {idx + 1} / {matches.length}
         </p>
 
         {current && (
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
-            {/* Datos PRUEBA */}
-            <div style={{ flex: 1, border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+            {/* PRUEBA */}
+            <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
               <h3 style={{ marginTop: 0 }}>PRUEBA</h3>
               <p><strong>Customer:</strong> {current.PRUEBA_customer ?? ""}</p>
               <p><strong>Nombre:</strong> {current.PRUEBA_nombre}</p>
@@ -83,10 +167,12 @@ export default function ValidationWizard({ matches, onClose }: Props) {
               <p><strong>Nº vía:</strong> {current.PRUEBA_num}</p>
             </div>
 
-            {/* Datos MINISTERIO */}
+            {/* MINISTERIO */}
             <div
               style={{
-                flex: 1, border: "1px solid #ddd", borderRadius: 8, padding: 12,
+                border: "1px solid #ddd",
+                borderRadius: 8,
+                padding: 12,
                 background:
                   statuses[idx] === "ACCEPTED" ? "#e8f5e9" :
                   statuses[idx] === "REJECTED" ? "#ffebee" : "#fff",
@@ -102,25 +188,25 @@ export default function ValidationWizard({ matches, onClose }: Props) {
               <p><strong>Fecha última autorización (Y):</strong> {current.MIN_fecha_autoriz}</p>
               <p><strong>Oferta asistencial (AC):</strong> {current.MIN_oferta_asist}</p>
 
-              {/* === SCORE grande === */}
-              <p
+              {/* SCORE grande y con color según estado */}
+              <div
                 style={{
-                  fontSize: 28,
-                  fontWeight: 800,
-                  color: statuses[idx] === "ACCEPTED" ? "#2e7d32"
-                        : statuses[idx] === "REJECTED" ? "#c62828"
-                        : "#333",
-                  marginTop: 12,
+                  marginTop: 10,
+                  fontSize: 30,
+                  fontWeight: 900,
+                  color:
+                    statuses[idx] === "ACCEPTED" ? "#2e7d32" :
+                    statuses[idx] === "REJECTED" ? "#c62828" : "#222",
                 }}
               >
                 SCORE: {current.SCORE.toFixed(3)}
-              </p>
+              </div>
             </div>
           </div>
         )}
 
         {/* Controles */}
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 18 }}>
           <button
             onClick={() => setIdx(i => Math.max(0, i - 1))}
             disabled={idx === 0}
@@ -128,26 +214,28 @@ export default function ValidationWizard({ matches, onClose }: Props) {
           >
             ← Anterior
           </button>
-          <div style={{ display: "flex", gap: 12 }}>
+
+          <div style={{ display: "flex", gap: 10 }}>
             <button
-              onClick={() => handleSet("ACCEPTED")}
-              style={{ padding: "8px 16px", background: "#4CAF50", color: "white", borderRadius: 6 }}
+              onClick={() => setStatus("ACCEPTED")}
+              style={{ padding: "8px 16px", background: COLORS.accepted, color: "#fff", borderRadius: 6 }}
             >
               Aceptar
             </button>
             <button
-              onClick={() => handleSet("STANDBY")}
-              style={{ padding: "8px 16px", background: "#FFC107", color: "black", borderRadius: 6 }}
+              onClick={() => setStatus("STANDBY")}
+              style={{ padding: "8px 16px", background: COLORS.standby, color: "#000", borderRadius: 6 }}
             >
               StandBy
             </button>
             <button
-              onClick={() => handleSet("REJECTED")}
-              style={{ padding: "8px 16px", background: "#F44336", color: "white", borderRadius: 6 }}
+              onClick={() => setStatus("REJECTED")}
+              style={{ padding: "8px 16px", background: COLORS.rejected, color: "#fff", borderRadius: 6 }}
             >
               Rechazar
             </button>
           </div>
+
           <button
             onClick={() => setIdx(i => Math.min(matches.length - 1, i + 1))}
             disabled={idx === matches.length - 1}
