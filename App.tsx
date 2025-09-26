@@ -1,18 +1,37 @@
-// App.tsx
-import React, { useState } from "react";
+// src/App.tsx
+import React, { useMemo, useState } from "react";
 import DatabaseUploadScreen from "@/components/DatabaseUploadScreen";
 import ResultsDashboard from "@/components/ResultsDashboard";
 import ClientTable from "@/components/ClientTable";
-import ValidationScreen from "@/components/ValidationScreen";
-import { exportMatchesToExcel } from "@/services/reportGeneratorService";
-import type { MatchOutput } from "@/types";
+import ValidationWizard from "@/components/ValidationWizard";
+import type { MatchOutput, MatchRecord } from "@/types";
+
+type Mode = "results" | "validate" | "upload";
 
 export default function App() {
+  const [mode, setMode] = useState<Mode>("upload");
   const [result, setResult] = useState<MatchOutput | null>(null);
 
-  const handleReset = () => setResult(null);
+  const handleGotResult = (r: MatchOutput) => {
+    setResult(r);
+    setMode("results");
+  };
 
-  if (!result) {
+  const handleReset = () => {
+    setResult(null);
+    setMode("upload");
+  };
+
+  const orderedMatches = useMemo<MatchRecord[]>(() => {
+    if (!result) return [];
+    return [...result.matches].sort((a, b) => {
+      const ca = (a.PRUEBA_customer ?? "").localeCompare(b.PRUEBA_customer ?? "");
+      if (ca !== 0) return ca;
+      return b.SCORE - a.SCORE;
+    });
+  }, [result]);
+
+  if (mode === "upload" || !result) {
     return (
       <div style={{ padding: 16 }}>
         <h1 style={{ marginBottom: 12 }}>RAQA – Buscador de coincidencias</h1>
@@ -20,63 +39,52 @@ export default function App() {
           Sube tu fichero <strong>PRUEBA.xlsx</strong> y hasta <strong>4 Excel</strong> del Ministerio.
           Calcularemos coincidencias con la metodología determinista (sin IA).
         </p>
-        <DatabaseUploadScreen onResult={setResult} />
+        <DatabaseUploadScreen onResult={handleGotResult} />
       </div>
     );
   }
 
+  if (mode === "validate") {
+    return (
+      <ValidationWizard
+        result={result}
+        onBack={() => setMode("results")}
+        onFinish={(decisions) => {
+          console.log("Decisiones finales:", decisions);
+          setMode("results");
+        }}
+      />
+    );
+  }
+
+  // mode === "results"
   return (
     <div style={{ padding: 16 }}>
       <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <h1 style={{ margin: 0, flex: 1 }}>RAQA – Resultados</h1>
-
-        {/* Botón para exportar a Excel todo el resultado (matches + top3) */}
         <button
-          onClick={() => exportMatchesToExcel(result, "matches.xlsx")}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            border: "1px solid #0c6",
-            background: "#0f9d58",
-            color: "#fff",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
+          onClick={() => setMode("validate")}
+          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #1565c0", background: "#1976d2", color: "white", cursor: "pointer" }}
         >
-          Exportar Excel
+          Ir a validación
         </button>
-
         <button
           onClick={handleReset}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            border: "1px solid #999",
-            cursor: "pointer",
-            fontWeight: 600,
-          }}
+          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #999", cursor: "pointer", background: "white" }}
         >
           Reiniciar
         </button>
       </header>
 
-      {/* Resumen con métricas y gráfico de distribución */}
-      <ResultsDashboard result={result} />
+      {/* Resumen + gráfico + botón a validación */}
+      <ResultsDashboard result={result} onGoValidate={() => setMode("validate")} />
 
-      {/* Tabla agrupada por Customer con SCORE/TIER/fuente y claves C/Y/AC */}
-      <ClientTable data={result.matches} />
+      {/* Menú por Customer con SCORE/TIER/fuente y C/Y/AC */}
+      <section style={{ marginTop: 16 }}>
+        <ClientTable data={orderedMatches} />
+      </section>
 
-      {/* Validación registro a registro con Top-3 candidatos */}
-      <ValidationScreen
-        result={result}
-        onBack={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-        onConfirmMatch={(m) => {
-          // Aquí puedes marcar el match como confirmado o guardarlo en backend
-          console.log("Match confirmado:", m);
-        }}
-      />
-
-      {/* (Opcional) Vista rápida del JSON bruto para depuración */}
+      {/* (Opcional) JSON para depuración */}
       <details style={{ marginTop: 12 }}>
         <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto</summary>
         <pre
