@@ -1,74 +1,17 @@
 // services/matchingService.ts
-// Metodología determinista de matching (multi-Excel) – sin IA
+// Metodología determinista replicando el script Python (pesos, bonus, bloqueo y tokenización).
+
+import type {
+  MatchOutput,
+  MatchRecord,
+  TopCandidate,
+  Thresholds,
+  MinisterioRow,
+  PruebaRow,
+} from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipos
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type PruebaRow = Record<string, any>;
-export type MinisterioRow = Record<string, any>;
-
-export interface MatchRecord {
-  // PRUEBA
-  PRUEBA_customer?: string | null;
-  PRUEBA_nombre: string;
-  PRUEBA_street: string;
-  PRUEBA_city: string;
-  PRUEBA_cp: string | null;
-  PRUEBA_num: string | null;
-
-  // MINISTERIO (mejor candidato)
-  MIN_nombre: string | null;
-  MIN_via: string | null;
-  MIN_num: string | null;
-  MIN_municipio: string | null;
-  MIN_cp: string | null;
-
-  // Claves y fuente (C, Y, AC + nombre del excel)
-  MIN_codigo_centro: string | null;
-  MIN_fecha_autoriz: string | null;
-  MIN_oferta_asist: string | null;
-  MIN_source: string | null;
-
-  // Scoring & Tier
-  SCORE: number;
-  TIER: "ALTA" | "REVISAR" | "SIN";
-}
-
-export interface TopCandidate {
-  PRUEBA_nombre: string;
-  PRUEBA_cp: string | null;
-  PRUEBA_num: string | null;
-
-  CAND_RANK: number;
-  CAND_SCORE: number;
-
-  CAND_MIN_nombre: string | null;
-  CAND_MIN_via: string | null;
-  CAND_MIN_num: string | null;
-  CAND_MIN_mun: string | null;
-  CAND_MIN_cp: string | null;
-
-  CAND_MIN_codigo_centro: string | null;
-  CAND_MIN_fecha_autoriz: string | null;
-  CAND_MIN_oferta_asist: string | null;
-  CAND_MIN_source: string | null;
-}
-
-export interface MatchOutput {
-  matches: MatchRecord[];
-  top3: TopCandidate[];
-  summary: {
-    n_prueba: number;
-    alta: number;
-    revisar: number;
-    sin: number;
-    thresholds: { alta: number; baja: number };
-  };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Parámetros de scoring (idénticos a los del script Python)
+// Parámetros (idénticos al script)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const THRESHOLD_ALTA = 0.85;
@@ -81,208 +24,185 @@ const BONUS_MUN = 0.10;
 const W_NAME = 0.50;
 const W_STREET = 0.35;
 
-// Stopwords/abreviaturas/tipos de vía
 const STOPWORDS = new Set([
-  "de", "del", "la", "el", "los", "las", "y", "en", "a",
-  "un", "una", "unos", "unas", "por", "para", "al", "lo", "da", "do"
+  "de","del","la","el","los","las","y","en","a","un","una","unos","unas","por","para","al","lo","da","do"
 ]);
 
 const ABREVIATURAS: Array<[RegExp, string]> = [
   [/\bhosp\.\b/g, "hospital"],
-  [/\bsto\b/g, "santo"], [/\bsta\b/g, "santa"], [/\bs\.\b/g, "san"],
+  [/\bsto\b/g, "santo"],
+  [/\bsta\b/g, "santa"],
+  [/\bs\.\b/g, "san"],
   [/\bcor\.\b/g, "corazon"],
-  [/\bav\.\b/g, "avenida"], [/\bavda\b/g, "avenida"], [/\bavd\b/g, "avenida"],
-  [/\bc\/\b/g, "calle"], [/\bcl\.\b/g, "calle"],
-  [/\bpº\b/g, "paseo"], [/\bps\.\b/g, "paseo"], [/\bpso\b/g, "paseo"],
-  [/\bctra\b/g, "carretera"], [/\bptda\b/g, "partida"], [/\burg\.\b/g, "urbanizacion"],
+  [/\bav\.\b/g, "avenida"],
+  [/\bavda\b/g, "avenida"],
+  [/\bavd\b/g, "avenida"],
+  [/\bc\/\b/g, "calle"],
+  [/\bcl\.\b/g, "calle"],
+  [/\bpº\b/g, "paseo"],
+  [/\bps\.\b/g, "paseo"],
+  [/\bpso\b/g, "paseo"],
+  [/\bctra\b/g, "carretera"],
+  [/\bptda\b/g, "partida"],
+  [/\burg\.\b/g, "urbanizacion"],
 ];
 
 const VIA_TIPOS = new Set([
-  "calle","carrer","avenida","av","avda","paseo","pso","ps",
-  "plaza","carretera","ctra","partida","ptda","camino","cno",
-  "travesia","tv","ronda"
+  "calle","carrer","avenida","av","avda","paseo","pso","ps","plaza","carretera","ctra","partida","ptda","camino","cno","travesia","tv","ronda"
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Utilidades de normalización y similitud
+// Utilidades de normalización y similitud (sin dependencias externas)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function stripAccents(s: string): string {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return s ? s.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
 }
 
-function normalizeText(s: any): string {
+function normalizeText(s: unknown): string {
   if (typeof s !== "string") return "";
-  let t = stripAccents(s.toLowerCase());
-  for (const [re, rep] of ABREVIATURAS) t = t.replace(re, rep);
-  t = t.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
-  return t;
+  let out = stripAccents(s.toLowerCase());
+  for (const [pat, repl] of ABREVIATURAS) out = out.replace(pat, repl);
+  out = out.replace(/[^\w\s]/g, " ");
+  return out.replace(/\s+/g, " ").trim();
 }
 
 function tokens(s: string): string[] {
-  const t = normalizeText(s);
-  if (!t) return [];
-  return t
-    .split(/[^0-9a-zñ]+/i)
-    .filter(x => x && (!STOPWORDS.has(x) || /^\d+$/.test(x)));
+  if (!s) return [];
+  const ts = normalizeText(s).split(/[^0-9a-zñ]+/g);
+  return ts.filter(t => t && (!STOPWORDS.has(t) || /^\d+$/.test(t)));
 }
 
 function streetCore(s: string): string {
-  return tokens(s).filter(x => !VIA_TIPOS.has(x)).join(" ");
+  const ts = tokens(s).filter(t => !VIA_TIPOS.has(t));
+  return ts.join(" ");
 }
 
 function extractNumVia(s: string): string | null {
-  const t = normalizeText(s);
-  let m = t.match(/(?:^|\s|,)(\d{1,4})(?:\s*[a-z]?)$/);
-  if (m) return m[1];
-  m = t.match(/(?:nº|no|num|numero)\s*(\d{1,4})/);
-  return m ? m[1] : null;
-}
-
-// Similitud “token_set_ratio”/“partial_ratio” simplificadas en TS
-
-function jaccardSet(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 0;
-  let inter = 0;
-  for (const x of a) if (b.has(x)) inter++;
-  const union = a.size + b.size - inter;
-  return union ? inter / union : 0;
-}
-
-function tokenSetRatio(a: string, b: string): number {
-  const A = new Set(tokens(a));
-  const B = new Set(tokens(b));
-  return jaccardSet(A, B);
-}
-
-// “partial” simple: ratio de la subsecuencia común más larga / tamaño mayor
-function lcsLength(a: string, b: string): number {
-  const s = normalizeText(a), t = normalizeText(b);
-  const n = s.length, m = t.length;
-  const dp = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let i = 1; i <= n; i++) {
-    for (let j = 1; j <= m; j++) {
-      dp[i][j] = s[i - 1] === t[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
-    }
-  }
-  return dp[n][m];
-}
-
-function partialRatio(a: string, b: string): number {
-  const lcs = lcsLength(a, b);
-  const denom = Math.max(normalizeText(a).length, normalizeText(b).length) || 1;
-  return lcs / denom;
-}
-
-function fuzzyRatio(a: string, b: string): number {
-  return Math.max(tokenSetRatio(a, b), partialRatio(a, b));
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers de acceso a campos (robusto a nombres distintos de columnas)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function pick(obj: Record<string, any>, keys: string[]): any {
-  for (const k of keys) {
-    if (k in obj && obj[k] != null) return obj[k];
-  }
+  const n = normalizeText(s);
+  const p1 = /(?:^|\s|,)(\d{1,4})(?:\s*[a-z]?)$/i.exec(n);
+  if (p1) return p1[1];
+  const p2 = /(?:nº|no|num|numero)\s*(\d{1,4})/i.exec(n);
+  if (p2) return p2[1];
   return null;
 }
 
-// PRUEBA: nombres esperados
-const P_KEYS = {
-  nombre: ["INFO_1", "Nombre", "name", "INFO1"],
-  nombre2: ["INFO_2", "INFO2"],
-  nombre3: ["INFO_3", "INFO3"],
-  street: ["STREET", "Direccion", "Dirección", "Calle", "Address"],
-  city: ["CITY", "Municipio", "Localidad", "Poblacion", "Población"],
-  cp: ["PostalCode", "CP", "Codigo Postal", "Código Postal", "Zip"],
-  customer: ["Customer", "Cliente", "IdCliente"]
-};
+// Aproximación a token_set_ratio/partial_ratio (sin rapidfuzz):
+// combinamos Jaccard de conjuntos + "partial overlap" de n-gramas.
+function fuzzyRatio(a: string, b: string): number {
+  const ta = new Set(tokens(a));
+  const tb = new Set(tokens(b));
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  const union = ta.size + tb.size - inter;
+  const jaccard = union ? inter / union : 0;
 
-// MINISTERIO: por las cabeceras que has mostrado
-const M_KEYS = {
-  nombre: ["Nombre Centro", "Nombre", "Denominacion", "Denominación"],
-  via: ["Nombre de la vía", "Via", "Vía", "Calle", "Direccion", "Dirección"],
-  num: ["Número Vía", "Numero Via", "Nº", "Número"],
-  mun: ["Municipio", "Localidad", "Poblacion", "Población"],
-  cp: ["Código Postal", "Codigo Postal", "CP"],
-  codigoCentro: ["Código de Centro Normalizado REGCESS (CCN)", "Codigo Centro", "Código Centro"],
-  fechaAut: ["Fecha de la última autorización", "Fecha última autorización"],
-  oferta: ["Oferta Asistencial", "Oferta asistencial"]
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Preparación de datos
-// ─────────────────────────────────────────────────────────────────────────────
-
-function preparePruebaRow(r: PruebaRow) {
-  const nom1 = pick(r, P_KEYS.nombre) ?? "";
-  const nom2 = pick(r, P_KEYS.nombre2) ?? "";
-  const nom3 = pick(r, P_KEYS.nombre3) ?? "";
-  const name = [nom1, nom2, nom3].filter(Boolean).join(" ");
-
-  const street = String(pick(r, P_KEYS.street) ?? "");
-  const city = String(pick(r, P_KEYS.city) ?? "");
-  const cpRaw = String(pick(r, P_KEYS.cp) ?? "");
-  const customer = pick(r, P_KEYS.customer);
-
-  const cpMatch = cpRaw.match(/(\d{5})/);
-  const cp = cpMatch ? cpMatch[1] : null;
-  const num = extractNumVia(street);
-
-  return {
-    _name: name,
-    _street_core: streetCore(street),
-    _num: num,
-    _cp: cp,
-    _mun: normalizeText(city),
-    raw: { street, city, cp, customer }
-  };
-}
-
-function prepareMinisterioRow(m: MinisterioRow, sourceName: string) {
-  const nombre = String(pick(m, M_KEYS.nombre) ?? "");
-  const via = String(pick(m, M_KEYS.via) ?? "");
-  const num = pick(m, M_KEYS.num);
-  const mun = String(pick(m, M_KEYS.mun) ?? "");
-  const cpRaw = String(pick(m, M_KEYS.cp) ?? "");
-
-  const cpMatch = cpRaw.match(/(\d{5})/);
-  const cp = cpMatch ? cpMatch[1] : null;
-
-  const numNorm = num != null ? (normalizeText(String(num)).match(/(\d{1,4})/)?.[1] ?? null) : null;
-
-  return {
-    _name: normalizeText(nombre),
-    _street_core: streetCore(via),
-    _num: numNorm,
-    _mun: normalizeText(mun),
-    _cp: cp,
-    _MIN_source: sourceName,
-
-    // Guardamos originales para devolverlos
-    _orig: {
-      nombre,
-      via,
-      num: num != null ? String(num) : null,
-      mun,
-      cp: cp,
-      codigo_centro: pick(m, M_KEYS.codigoCentro),
-      fecha_aut: pick(m, M_KEYS.fechaAut),
-      oferta: pick(m, M_KEYS.oferta)
+  // partial: máximo solapamiento de subcadenas (n-gramas de 3..5)
+  const ng = (s: string, n: number) => {
+    const ss = normalizeText(s);
+    const arr: string[] = [];
+    for (let i = 0; i + n <= ss.length; i++) {
+      const frag = ss.slice(i, i + n);
+      if (!frag.trim()) continue;
+      arr.push(frag);
     }
+    return new Set(arr);
+  };
+  const a3 = ng(a, 3), b3 = ng(b, 3);
+  let inter3 = 0;
+  for (const t of a3) if (b3.has(t)) inter3++;
+  const dice3 = (2 * inter3) / (a3.size + b3.size || 1);
+
+  // mezcla simple
+  return Math.max(jaccard, dice3);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mapeo de columnas del Ministerio por "letras" (E, M, K, O, N, C, Y, AC)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// El parser del frontend nos da filas-objeto. Para "mapear por letras",
+// recuperamos el orden de cabeceras de la primera fila y calculamos índice.
+//
+//   E(nombre centro), M(vía), K(municipio), O(CP), N(nº vía),
+//   C(código centro), Y(fecha última autorización), AC(oferta asistencial)
+//
+// Nota: si alguna columna no existe por desplazamiento, quedará en null.
+
+const MIN_LETTERS: Record<string, string> = {
+  nombre_centro: "E",
+  via_nombre: "M",
+  municipio: "K",
+  cp: "O",
+  via_numero: "N",
+  codigo_centro: "C",
+  fecha_autoriz: "Y",
+  oferta_asist: "AC",
+};
+
+function excelColToIndex(letter: string): number {
+  const u = letter.trim().toUpperCase();
+  let idx = 0;
+  for (let i = 0; i < u.length; i++) {
+    idx = idx * 26 + (u.charCodeAt(i) - 64);
+  }
+  return idx - 1;
+}
+
+function mapMinisterioColsByLetters(rows: MinisterioRow[]): Record<string, string | null> {
+  if (!rows || rows.length === 0) {
+    return {
+      nombre_centro: null, via_nombre: null, municipio: null, cp: null, via_numero: null,
+      codigo_centro: null, fecha_autoriz: null, oferta_asist: null,
+    };
+  }
+  // El orden de Object.keys en la 1ª fila suele respetar el de la hoja
+  const headers = Object.keys(rows[0] as any);
+  const by = (L: string): string | null => {
+    const i = excelColToIndex(L);
+    return (i >= 0 && i < headers.length) ? headers[i] : null;
+  };
+  const out: Record<string, string | null> = {};
+  for (const [k, L] of Object.entries(MIN_LETTERS)) out[k] = by(L);
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mapeo de PRUEBA (columnas esperadas)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function mapPruebaCols(rows: PruebaRow[]) {
+  if (!rows || rows.length === 0) {
+    throw new Error("PRUEBA está vacío.");
+  }
+  const cols = new Set(Object.keys(rows[0] || {}));
+  const need = ["INFO_1", "STREET", "CITY", "PostalCode"];
+  for (const n of need) {
+    if (!cols.has(n)) throw new Error(`En PRUEBA falta '${n}'. Columnas: ${Array.from(cols).join(", ")}`);
+  }
+  return {
+    nombre_1: "INFO_1",
+    nombre_2: cols.has("INFO_2") ? "INFO_2" : null,
+    nombre_3: cols.has("INFO_3") ? "INFO_3" : null,
+    street: "STREET",
+    city: "CITY",
+    cp: "PostalCode",
+    customer: cols.has("Customer") ? "Customer" : null,
   };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scoring
+// Scoring idéntico al Python
 // ─────────────────────────────────────────────────────────────────────────────
 
 function scoreRow(
-  name_pru: string, name_min: string,
-  street_pru_core: string, street_min_core: string,
-  same_cp: boolean, same_num: boolean, same_mun: boolean
+  name_pru: string,
+  name_min: string,
+  street_pru_core: string,
+  street_min_core: string,
+  same_cp: boolean,
+  same_num: boolean,
+  same_mun: boolean
 ): number {
   const s_name = fuzzyRatio(name_pru, name_min);
   const s_strt = fuzzyRatio(street_pru_core, street_min_core);
@@ -293,155 +213,206 @@ function scoreRow(
   return Math.max(0, Math.min(1, score));
 }
 
-function tierFromScore(s: number): "ALTA" | "REVISAR" | "SIN" {
-  if (s >= THRESHOLD_ALTA) return "ALTA";
-  if (s >= THRESHOLD_BAJA) return "REVISAR";
-  return "SIN";
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// API pública del servicio
+// API pública: match contra N excels del Ministerio
+//   - pruebaRows: filas crudas de PRUEBA
+//   - ministerios: mapa { sourceName: rows[] } para 1..4 excels
+// Devuelve MatchOutput (matches + top3 + summary)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Ejecuta el matching entre PRUEBA y hasta 4 bases del Ministerio.
- * @param pruebaRows Filas del Excel PRUEBA (ya leídas en el frontend).
- * @param ministerioBySource Mapa: nombre_de_excel -> array de filas (cada una con las columnas del ministerio).
- */
 export function matchClientsAgainstMinisterios(
   pruebaRows: PruebaRow[],
-  ministerioBySource: Record<string, MinisterioRow[]>
+  ministerios: Record<string, MinisterioRow[]>,
+  thresholds: Partial<Thresholds> = {}
 ): MatchOutput {
-  // Preparar PRUEBA
-  const P = pruebaRows.map(preparePruebaRow);
+  const mpr = mapPruebaCols(pruebaRows);
 
-  // Preparar MIN (concatenando las 1..4 fuentes con su nombre)
-  const M: ReturnType<typeof prepareMinisterioRow>[] = [];
-  for (const [source, rows] of Object.entries(ministerioBySource)) {
-    if (!rows || !rows.length) continue;
-    for (const r of rows) M.push(prepareMinisterioRow(r, source));
-  }
-  if (!M.length) {
+  // Derivados PRUEBA
+  const dfp = pruebaRows.map((r) => {
+    const name =
+      [mpr.nombre_1, mpr.nombre_2, mpr.nombre_3]
+        .filter(Boolean)
+        .map((k) => String((r as any)[k as string] ?? ""))
+        .join(" ")
+        .trim();
+
+    const cp = String((r as any)[mpr.cp] ?? "").match(/(\d{5})/)?.[1] ?? "";
+    const street = String((r as any)[mpr.street] ?? "");
     return {
-      matches: [],
-      top3: [],
-      summary: { n_prueba: 0, alta: 0, revisar: 0, sin: 0, thresholds: { alta: THRESHOLD_ALTA, baja: THRESHOLD_BAJA } }
+      _name: name,
+      _cp: cp,
+      _street_core: streetCore(street),
+      _num: extractNumVia(street),
+      _mun: normalizeText(String((r as any)[mpr.city] ?? "")),
+      _raw: r,
     };
-  }
+  });
 
-  const matches: MatchRecord[] = [];
-  const top3: TopCandidate[] = [];
+  const allMatches: MatchRecord[] = [];
+  const allTop3: TopCandidate[] = [];
 
-  for (const p of P) {
-    // Bloqueo por CP; si no hay, bloqueamos por municipio
-    let candidates = M;
-    if (p._cp) {
-      const byCP = candidates.filter(m => m._cp === p._cp);
-      if (byCP.length) candidates = byCP;
-    }
-    if ((!candidates.length || !p._cp) && p._mun) {
-      const byMun = M.filter(m => m._mun === p._mun);
-      if (byMun.length) candidates = byMun;
-    }
+  // Procesar cada Excel del ministerio por separado, preservando source
+  for (const [source, rows] of Object.entries(ministerios)) {
+    if (!rows || rows.length === 0) continue;
 
-    // Puntuar
-    const scored = candidates.map(m => {
-      const sc = scoreRow(
-        p._name, m._name,
-        p._street_core, m._street_core,
-        Boolean(p._cp && m._cp && p._cp === m._cp),
-        Boolean(p._num && m._num && String(p._num) === String(m._num)),
-        Boolean(p._mun && m._mun && p._mun === m._mun)
-      );
-      return { sc, m };
+    const mm = mapMinisterioColsByLetters(rows);
+
+    // Derivados MIN
+    const dfm = rows.map((row) => {
+      const nombre = mm.nombre_centro ? String((row as any)[mm.nombre_centro] ?? "") : "";
+      const via = mm.via_nombre ? String((row as any)[mm.via_nombre] ?? "") : "";
+      const mun = mm.municipio ? String((row as any)[mm.municipio] ?? "") : "";
+      const cp = mm.cp ? (String((row as any)[mm.cp] ?? "").match(/(\d{5})/)?.[1] ?? "") : "";
+      let num: string | null = null;
+      if (mm.via_numero && (mm.via_numero in row)) {
+        const raw = String((row as any)[mm.via_numero] ?? "");
+        const m = normalizeText(raw).match(/(\d{1,4})/);
+        num = m ? m[1] : null;
+      }
+      return {
+        _name: normalizeText(nombre),
+        _street_core: streetCore(via),
+        _mun: normalizeText(mun),
+        _cp: cp,
+        _num: num,
+        _viaRaw: mm.via_nombre ? (row as any)[mm.via_nombre] ?? null : null,
+        _munRaw: mm.municipio ? (row as any)[mm.municipio] ?? null : null,
+        _row: row,
+      };
     });
 
-    if (!scored.length) {
-      matches.push({
-        PRUEBA_customer: p.raw.customer ?? null,
-        PRUEBA_nombre: p._name,
-        PRUEBA_street: p.raw.street,
-        PRUEBA_city: p.raw.city,
-        PRUEBA_cp: p._cp,
-        PRUEBA_num: p._num,
+    // Matching fila a fila
+    for (const r of dfp) {
+      // Bloqueo por CP, si no hay → por municipio
+      let cand = dfm;
+      if (r._cp) cand = cand.filter((m) => m._cp === r._cp);
+      if (cand.length === 0 && r._mun) cand = dfm.filter((m) => m._mun === r._mun);
 
-        MIN_nombre: null, MIN_via: null, MIN_num: null,
-        MIN_municipio: null, MIN_cp: null,
-        MIN_codigo_centro: null, MIN_fecha_autoriz: null, MIN_oferta_asist: null,
-        MIN_source: null,
+      // Puntuar candidatos
+      const scored: Array<{ sc: number; m: typeof dfm[number] }> = [];
+      for (const m of cand) {
+        const sc = scoreRow(
+          r._name, m._name,
+          r._street_core, m._street_core,
+          Boolean(r._cp && r._cp === m._cp),
+          Boolean(r._num && m._num && String(r._num) === String(m._num)),
+          Boolean(r._mun && r._mun === m._mun)
+        );
+        scored.push({ sc, m });
+      }
 
-        SCORE: 0.0, TIER: "SIN"
-      });
-      continue;
-    }
+      if (scored.length > 0) {
+        scored.sort((a, b) => b.sc - a.sc);
+        const best = scored[0];
 
-    scored.sort((a, b) => b.sc - a.sc);
-    const best = scored[0];
+        // Extraer claves C/Y/AC
+        const C = mm.codigo_centro ? (best.m._row as any)[mm.codigo_centro] ?? null : null;
+        const Y = mm.fecha_autoriz ? (best.m._row as any)[mm.fecha_autoriz] ?? null : null;
+        const AC = mm.oferta_asist ? (best.m._row as any)[mm.oferta_asist] ?? null : null;
 
-    matches.push({
-      PRUEBA_customer: p.raw.customer ?? null,
-      PRUEBA_nombre: p._name,
-      PRUEBA_street: p.raw.street,
-      PRUEBA_city: p.raw.city,
-      PRUEBA_cp: p._cp,
-      PRUEBA_num: p._num,
+        // Registro principal
+        const rec: MatchRecord = {
+          PRUEBA_customer: mpr.customer ? ((r._raw as any)[mpr.customer] ?? null) : null,
+          PRUEBA_nombre: r._name,
+          PRUEBA_street: String((r._raw as any)[mpr.street] ?? ""),
+          PRUEBA_city: String((r._raw as any)[mpr.city] ?? ""),
+          PRUEBA_cp: r._cp || null,
+          PRUEBA_num: r._num,
 
-      MIN_nombre: best.m._orig.nombre ?? null,
-      MIN_via: best.m._orig.via ?? null,
-      MIN_num: best.m._orig.num ?? null,
-      MIN_municipio: best.m._orig.mun ?? null,
-      MIN_cp: best.m._orig.cp ?? null,
+          MIN_nombre: best.m._name || null,
+          MIN_via: best.m._viaRaw ? String(best.m._viaRaw) : null,
+          MIN_num: best.m._num,
+          MIN_municipio: best.m._munRaw ? String(best.m._munRaw) : null,
+          MIN_cp: best.m._cp || null,
 
-      MIN_codigo_centro: (best.m._orig.codigo_centro ?? null) as any,
-      MIN_fecha_autoriz: (best.m._orig.fecha_aut ?? null) as any,
-      MIN_oferta_asist: (best.m._orig.oferta ?? null) as any,
-      MIN_source: best.m._MIN_source ?? null,
+          MIN_codigo_centro: C ? String(C) : null,
+          MIN_fecha_autoriz: Y ? String(Y) : null,
+          MIN_oferta_asist: AC ? String(AC) : null,
+          MIN_source: source,
 
-      SCORE: Number(best.sc.toFixed(4)),
-      TIER: tierFromScore(best.sc)
-    });
+          SCORE: Number(best.sc.toFixed(4)),
+          TIER: best.sc >= THRESHOLD_ALTA ? "ALTA" : (best.sc >= THRESHOLD_BAJA ? "REVISAR" : "SIN"),
+        };
+        allMatches.push(rec);
 
-    for (let i = 0; i < Math.min(3, scored.length); i++) {
-      const c = scored[i];
-      top3.push({
-        PRUEBA_nombre: p._name,
-        PRUEBA_cp: p._cp,
-        PRUEBA_num: p._num,
+        // Top-3
+        for (let i = 0; i < Math.min(3, scored.length); i++) {
+          const c = scored[i];
+          const cC = mm.codigo_centro ? (c.m._row as any)[mm.codigo_centro] ?? null : null;
+          const cY = mm.fecha_autoriz ? (c.m._row as any)[mm.fecha_autoriz] ?? null : null;
+          const cAC = mm.oferta_asist ? (c.m._row as any)[mm.oferta_asist] ?? null : null;
 
-        CAND_RANK: i + 1,
-        CAND_SCORE: Number(c.sc.toFixed(4)),
+          const cand: TopCandidate = {
+            PRUEBA_nombre: r._name,
+            PRUEBA_cp: r._cp || null,
+            PRUEBA_num: r._num || null,
 
-        CAND_MIN_nombre: c.m._orig.nombre ?? null,
-        CAND_MIN_via: c.m._orig.via ?? null,
-        CAND_MIN_num: c.m._orig.num ?? null,
-        CAND_MIN_mun: c.m._orig.mun ?? null,
-        CAND_MIN_cp: c.m._orig.cp ?? null,
+            CAND_RANK: i + 1,
+            CAND_SCORE: Number(c.sc.toFixed(4)),
 
-        CAND_MIN_codigo_centro: (c.m._orig.codigo_centro ?? null) as any,
-        CAND_MIN_fecha_autoriz: (c.m._orig.fecha_aut ?? null) as any,
-        CAND_MIN_oferta_asist: (c.m._orig.oferta ?? null) as any,
-        CAND_MIN_source: c.m._MIN_source ?? null
-      });
+            CAND_MIN_nombre: c.m._name || null,
+            CAND_MIN_via: c.m._viaRaw ? String(c.m._viaRaw) : null,
+            CAND_MIN_num: c.m._num,
+            CAND_MIN_mun: c.m._munRaw ? String(c.m._munRaw) : null,
+            CAND_MIN_cp: c.m._cp || null,
+
+            CAND_MIN_codigo_centro: cC ? String(cC) : null,
+            CAND_MIN_fecha_autoriz: cY ? String(cY) : null,
+            CAND_MIN_oferta_asist: cAC ? String(cAC) : null,
+            CAND_MIN_source: source,
+          };
+          allTop3.push(cand);
+        }
+      } else {
+        // Sin candidatos
+        const rec: MatchRecord = {
+          PRUEBA_customer: mpr.customer ? ((r._raw as any)[mpr.customer] ?? null) : null,
+          PRUEBA_nombre: r._name,
+          PRUEBA_street: String((r._raw as any)[mpr.street] ?? ""),
+          PRUEBA_city: String((r._raw as any)[mpr.city] ?? ""),
+          PRUEBA_cp: r._cp || null,
+          PRUEBA_num: r._num,
+
+          MIN_nombre: null,
+          MIN_via: null,
+          MIN_num: null,
+          MIN_municipio: null,
+          MIN_cp: null,
+
+          MIN_codigo_centro: null,
+          MIN_fecha_autoriz: null,
+          MIN_oferta_asist: null,
+          MIN_source: source,
+
+          SCORE: 0,
+          TIER: "SIN",
+        };
+        allMatches.push(rec);
+      }
     }
   }
 
-  const alta = matches.filter(x => x.TIER === "ALTA").length;
-  const revisar = matches.filter(x => x.TIER === "REVISAR").length;
-  const sin = matches.filter(x => x.TIER === "SIN").length;
+  // Orden estable por customer y score
+  allMatches.sort((a, b) => {
+    const ca = (a.PRUEBA_customer ?? "").localeCompare(b.PRUEBA_customer ?? "");
+    if (ca !== 0) return ca;
+    return b.SCORE - a.SCORE;
+  });
+
+  const summary = {
+    n_prueba: new Set(dfp.map(d => d._name + "|" + d._cp + "|" + (d._num ?? ""))).size,
+    alta: allMatches.filter(m => m.TIER === "ALTA").length,
+    revisar: allMatches.filter(m => m.TIER === "REVISAR").length,
+    sin: allMatches.filter(m => m.TIER === "SIN").length,
+    thresholds: {
+      alta: thresholds?.alta ?? THRESHOLD_ALTA,
+      baja: thresholds?.baja ?? THRESHOLD_BAJA,
+    } as Thresholds,
+  };
 
   return {
-    matches: matches.sort((a, b) => {
-      // ordenar por customer y por score desc
-      const ca = (a.PRUEBA_customer ?? "").localeCompare(b.PRUEBA_customer ?? "");
-      if (ca !== 0) return ca;
-      return b.SCORE - a.SCORE;
-    }),
-    top3,
-    summary: {
-      n_prueba: matches.length,
-      alta, revisar, sin,
-      thresholds: { alta: THRESHOLD_ALTA, baja: THRESHOLD_BAJA }
-    }
+    matches: allMatches,
+    top3: allTop3,
+    summary,
   };
 }
-
