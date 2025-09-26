@@ -2,20 +2,39 @@
 import type { MatchOutput } from "@/types";
 import type { DecisionMap } from "@/components/ValidationWizard";
 
-// XLSX en navegador (igual que fileParserService)
-let XLSXRef: any;
-try { XLSXRef = require("xlsx"); } catch { XLSXRef = (window as any).XLSX; }
-if (!XLSXRef) throw new Error('No se encontró XLSX. Instala "xlsx" o carga el script global.');
+// Carga perezosa de XLSX que funciona con Vite/ESM y también con un <script> CDN.
+// - Si tienes el paquete: npm i xlsx
+// - O agrega en index.html: <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-export function exportMatchesToExcel(
+let XLSXRef: any | null = null;
+
+async function getXLSX(): Promise<any> {
+  if (XLSXRef) return XLSXRef;
+  try {
+    // ESM dinámico (funciona en Vite)
+    XLSXRef = await import("xlsx");
+    return XLSXRef;
+  } catch {
+    const w = (window as any) || {};
+    if (w.XLSX) {
+      XLSXRef = w.XLSX;
+      return XLSXRef;
+    }
+    throw new Error(
+      'No se encontró la librería XLSX. Instala "xlsx" (npm i xlsx) o añade el script CDN en index.html.'
+    );
+  }
+}
+
+export async function exportMatchesToExcel(
   result: MatchOutput,
   decisions: DecisionMap = {},
   comments: Record<string, string> = {},
   filename = "matches.xlsx"
-) {
-  const { matches } = result;
+): Promise<void> {
+  const XLSX = await getXLSX();
 
-  const rows = matches.map((m) => {
+  const rows = result.matches.map((m) => {
     const key = [
       m.PRUEBA_customer ?? "",
       m.PRUEBA_nombre ?? "",
@@ -46,17 +65,21 @@ export function exportMatchesToExcel(
       "Código centro (C)": m.MIN_codigo_centro ?? "",
       "Fecha última aut. (Y)": m.MIN_fecha_autoriz ?? "",
       "Oferta asistencial (AC)": m.MIN_oferta_asist ?? "",
-      "Validación": validacion,
-      "Comentarios": comment,
+      "Validación":    validacion,
+      "Comentarios":   comment,
     };
   });
 
-  const wb = XLSXRef.utils.book_new();
-  const ws = XLSXRef.utils.json_to_sheet(rows);
-  XLSXRef.utils.book_append_sheet(wb, ws, "MATCHES");
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, "MATCHES");
 
-  const wbout = XLSXRef.write(wb, { bookType: "xlsx", type: "array" });
-  const blob = new Blob([wbout], { type: "application/octet-stream" });
+  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([wbout], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+
+  // descargar
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -67,3 +90,4 @@ export function exportMatchesToExcel(
     a.remove();
   }, 0);
 }
+
