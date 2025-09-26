@@ -1,7 +1,5 @@
-// src/types.ts
-
 export type PruebaRow = Record<string, any>;
-export type MinisterioAoA = any[][]; // matriz: cada fila es un array, la 1ª fila son cabeceras crudas
+export type MinisterioAoA = any[][]; // matriz: fila = array; 1ª fila = cabeceras crudas
 
 export interface MatchRecord {
   PRUEBA_customer: string | null;
@@ -57,3 +55,4 @@ export interface MatchOutput {
     thresholds: { alta: number; baja: number };
   };
 }
+
