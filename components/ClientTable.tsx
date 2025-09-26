@@ -1,156 +1,200 @@
-import React, { useState, useMemo } from 'react';
-import { Client, ValidationResult } from '../types';
-import StatusBadge from './StatusBadge';
-import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
+// components/ClientTable.tsx
+import React, { useMemo } from "react";
+import type { MatchRecord } from "@/types";
 
-interface ClientTableProps {
-  results: ValidationResult[];
-  clients: Client[];
-}
-
-const ExpandedRow: React.FC<{ result: ValidationResult }> = ({ result }) => {
-    const { officialData } = result;
-    return (
-        <div className="bg-slate-50 p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div>
-                    <p className="font-medium text-gray-500">Reason</p>
-                    <p className="text-gray-800">{result.reason}</p>
-                </div>
-                {officialData && (
-                    <>
-                        <div>
-                            <p className="font-medium text-gray-500">Official Name</p>
-                            <p className="text-gray-800">{officialData.officialName}</p>
-                        </div>
-                        <div>
-                            <p className="font-medium text-gray-500">Official Address</p>
-                            <p className="text-gray-800">{officialData.officialAddress}</p>
-                        </div>
-                        <div>
-                            <p className="font-medium text-gray-500">Source Database</p>
-                            <p className="text-gray-800">{officialData.sourceDB}</p>
-                        </div>
-                         {officialData.evidenceUrl && (
-                            <div className="md:col-span-2">
-                                <p className="font-medium text-gray-500">Evidence</p>
-                                <a href={officialData.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-[#00AEEF] hover:underline break-all">
-                                    {officialData.evidenceUrl}
-                                </a>
-                            </div>
-                         )}
-                    </>
-                )}
-            </div>
-        </div>
-    );
+type Props = {
+  /** Matches devueltos por el motor (result.matches) */
+  data: MatchRecord[];
+  /** (Opcional) filtrar por tier: "ALTA" | "REVISAR" | "SIN" */
+  filterTier?: Array<MatchRecord["TIER"]>;
 };
 
-const ClientTable: React.FC<ClientTableProps> = ({ results, clients }) => {
-    const [expandedRow, setExpandedRow] = useState<number | null>(null);
-    const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>({ key: 'INFO_1', direction: 'ascending' });
+export default function ClientTable({ data, filterTier }: Props) {
+  // 1) Filtrar por tier si se solicita
+  const filtered = useMemo(() => {
+    if (!filterTier || filterTier.length === 0) return data ?? [];
+    const set = new Set(filterTier);
+    return (data ?? []).filter((m) => set.has(m.TIER));
+  }, [data, filterTier]);
 
-    const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
-
-    const sortedResults = useMemo(() => {
-        let sortableItems = [...results];
-        if (sortConfig !== null) {
-            sortableItems.sort((a, b) => {
-                const clientA = clientMap.get(a.clientId);
-                const clientB = clientMap.get(b.clientId);
-                if (!clientA || !clientB) return 0;
-                
-                let valA: any, valB: any;
-                if (sortConfig.key === 'status') {
-                    valA = a.status;
-                    valB = b.status;
-                } else {
-                    valA = clientA[sortConfig.key as keyof Client] || '';
-                    valB = clientB[sortConfig.key as keyof Client] || '';
-                }
-
-                if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
-                if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
-                return 0;
-            });
-        }
-        return sortableItems;
-    }, [results, sortConfig, clientMap]);
-
-    const requestSort = (key: string) => {
-        let direction: 'ascending' | 'descending' = 'ascending';
-        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
-            direction = 'descending';
-        }
-        setSortConfig({ key, direction });
-    };
-
-    const getSortIcon = (key: string) => {
-        if (!sortConfig || sortConfig.key !== key) {
-            return <ChevronsUpDown className="h-4 w-4 ml-2 text-gray-400" />;
-        }
-        if (sortConfig.direction === 'ascending') {
-            return <ChevronUp className="h-4 w-4 ml-2" />;
-        }
-        return <ChevronDown className="h-4 w-4 ml-2" />;
-    };
+  // 2) Agrupar por Customer
+  const byCustomer = useMemo(() => {
+    const map = new Map<string, MatchRecord[]>();
+    for (const m of filtered) {
+      const key = (m.PRUEBA_customer ?? "").trim() || "(Sin Customer)";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(m);
+    }
+    // Orden interno por SCORE desc
+    for (const arr of map.values()) {
+      arr.sort((a, b) => b.SCORE - a.SCORE);
+    }
+    // Orden de clientes por nombre
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filtered]);
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <button onClick={() => requestSort('INFO_1')} className="flex items-center">Client Info {getSortIcon('INFO_1')}</button>
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <button onClick={() => requestSort('CITY')} className="flex items-center">Location {getSortIcon('CITY')}</button>
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <button onClick={() => requestSort('status')} className="flex items-center">Status {getSortIcon('status')}</button>
-            </th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {sortedResults.map((result) => {
-            const client = clientMap.get(result.clientId);
-            if (!client) return null;
-            const isExpanded = expandedRow === client.id;
-            return (
-              <React.Fragment key={client.id}>
-                <tr className={isExpanded ? 'bg-[#00AEEF]/10' : ''}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <button onClick={() => setExpandedRow(isExpanded ? null : client.id)}>
-                        {isExpanded ? <ChevronUp className="h-5 w-5 text-[#00AEEF]"/> : <ChevronDown className="h-5 w-5 text-gray-500"/>}
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-[#333333]">{client.INFO_1 || 'N/A'}</div>
-                    <div className="text-sm text-gray-500">{client.INFO_2 || client.CIF_NIF || ''}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <div>{client.CITY}</div>
-                    <div className="text-xs text-gray-400">{client.PROVINCIA}, {client.CCAA}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <StatusBadge status={result.status} />
-                  </td>
-                </tr>
-                {isExpanded && (
+    <div style={{ padding: 12 }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <h2 style={{ margin: 0, flex: 1 }}>Resultados por Customer</h2>
+        {/* Puedes añadir aquí controles de filtro por tier si quieres */}
+      </header>
+
+      {byCustomer.length === 0 ? (
+        <p style={{ color: "#666" }}>No hay datos para mostrar.</p>
+      ) : (
+        byCustomer.map(([customer, rows]) => {
+          const counters = countByTier(rows);
+          return (
+            <details key={customer} open style={detailsStyle}>
+              <summary style={summaryStyle}>
+                <span style={{ fontWeight: 700 }}>{customer}</span>
+                <span style={{ marginLeft: 8, color: "#666" }}>
+                  {rows.length} coincidencia(s) —{" "}
+                  <TierPills ALTA={counters.ALTA} REVISAR={counters.REVISAR} SIN={counters.SIN} />
+                </span>
+              </summary>
+
+              <div style={{ overflowX: "auto", marginTop: 8 }}>
+                <table style={tableStyle}>
+                  <thead>
                     <tr>
-                        <td colSpan={4}>
-                            <ExpandedRow result={result} />
-                        </td>
+                      <th style={thStyle}>PRUEBA_nombre</th>
+                      <th style={thStyle}>PRUEBA_street</th>
+                      <th style={thStyle}>PRUEBA_city</th>
+                      <th style={thStyle}>PRUEBA_cp</th>
+
+                      <th style={thStyle}>MIN_nombre</th>
+                      <th style={thStyle}>MIN_via</th>
+                      <th style={thStyle}>MIN_num</th>
+                      <th style={thStyle}>MIN_municipio</th>
+                      <th style={thStyle}>MIN_cp</th>
+
+                      <th style={thStyle}>SCORE</th>
+                      <th style={thStyle}>TIER</th>
+                      <th style={thStyle}>Fuente</th>
+
+                      <th style={thStyle}>Código centro (C)</th>
+                      <th style={thStyle}>Fecha última aut. (Y)</th>
+                      <th style={thStyle}>Oferta asistencial (AC)</th>
                     </tr>
-                )}
-              </React.Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+                  </thead>
+                  <tbody>
+                    {rows.map((m, i) => (
+                      <tr key={i}>
+                        <td style={tdStyle}>{m.PRUEBA_nombre}</td>
+                        <td style={tdStyle}>{m.PRUEBA_street}</td>
+                        <td style={tdStyle}>{m.PRUEBA_city}</td>
+                        <td style={tdStyle}>{m.PRUEBA_cp ?? ""}</td>
+
+                        <td style={tdStyle}>{m.MIN_nombre ?? ""}</td>
+                        <td style={tdStyle}>{m.MIN_via ?? ""}</td>
+                        <td style={tdStyle}>{m.MIN_num ?? ""}</td>
+                        <td style={tdStyle}>{m.MIN_municipio ?? ""}</td>
+                        <td style={tdStyle}>{m.MIN_cp ?? ""}</td>
+
+                        <td style={tdStyle}>{m.SCORE.toFixed(3)}</td>
+                        <td style={tdStyle}><span style={tierBadgeStyle(m.TIER)}>{m.TIER}</span></td>
+                        <td style={tdStyle}>{m.MIN_source ?? ""}</td>
+
+                        <td style={tdStyle}>{m.MIN_codigo_centro ?? ""}</td>
+                        <td style={tdStyle}>{m.MIN_fecha_autoriz ?? ""}</td>
+                        <td style={tdStyle}>{m.MIN_oferta_asist ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          );
+        })
+      )}
     </div>
   );
+}
+
+// ───────── Helpers de UI ─────────
+
+function countByTier(rows: MatchRecord[]) {
+  return {
+    ALTA: rows.filter((r) => r.TIER === "ALTA").length,
+    REVISAR: rows.filter((r) => r.TIER === "REVISAR").length,
+    SIN: rows.filter((r) => r.TIER === "SIN").length,
+  };
+}
+
+function TierPills({ ALTA, REVISAR, SIN }: { ALTA: number; REVISAR: number; SIN: number }) {
+  return (
+    <>
+      <span style={pillStyle("#e8f5e9", "#2e7d32", "#c8e6c9")}>ALTA: {ALTA}</span>{" "}
+      <span style={pillStyle("#fff8e1", "#f57f17", "#ffe082")}>REVISAR: {REVISAR}</span>{" "}
+      <span style={pillStyle("#ffebee", "#c62828", "#ffcdd2")}>SIN: {SIN}</span>
+    </>
+  );
+}
+
+// ───────── estilos inline sencillos ─────────
+
+const detailsStyle: React.CSSProperties = {
+  border: "1px solid #e5e5e5",
+  borderRadius: 8,
+  padding: 8,
+  marginBottom: 12,
+  background: "#fafafa",
 };
 
-export default ClientTable;
+const summaryStyle: React.CSSProperties = {
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  listStyle: "none",
+};
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  fontSize: 13,
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  borderBottom: "2px solid #ddd",
+  padding: "8px 6px",
+  background: "#f7f7f7",
+  position: "sticky",
+  top: 0,
+  zIndex: 1,
+};
+
+const tdStyle: React.CSSProperties = {
+  borderBottom: "1px solid #eee",
+  padding: "6px",
+  verticalAlign: "top",
+};
+
+function tierBadgeStyle(tier: MatchRecord["TIER"]): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+  };
+  if (tier === "ALTA") return { ...base, background: "#e8f5e9", color: "#2e7d32", border: "1px solid #c8e6c9" };
+  if (tier === "REVISAR") return { ...base, background: "#fff8e1", color: "#f57f17", border: "1px solid #ffe082" };
+  return { ...base, background: "#ffebee", color: "#c62828", border: "1px solid #ffcdd2" };
+}
+
+function pillStyle(bg: string, color: string, border: string): React.CSSProperties {
+  return {
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    background: bg,
+    color,
+    border: `1px solid ${border}`,
+  };
+}
