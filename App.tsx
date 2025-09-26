@@ -1,175 +1,199 @@
-// src/App.tsx
+// App.tsx
+import React, { useMemo, useState } from "react";
+import DatabaseUploadScreen from "@/components/DatabaseUploadScreen";
+import type { MatchOutput, MatchRecord } from "@/types";
 
-import React, { useState } from 'react';
-import { AppStatus, Client, ValidationResult } from './types';
-import LoginScreen from './components/LoginScreen';
-import FileUpload from './components/FileUpload';
-import DatabaseUploadScreen from './components/DatabaseUploadScreen';
-import ValidationScreen from './components/ValidationScreen';
-import ResultsDashboard from './components/ResultsDashboard';
-import Layout from './components/Layout';
-import { enrichClientsWithGeoData, findPotentialMatches } from './services/geminiService';
-import { parseClientFile } from './services/fileParserService';
+export default function App() {
+  const [result, setResult] = useState<MatchOutput | null>(null);
 
-// CORRECCIÓN: Asegúrate de que la ruta de importación de CSS es correcta
-import './src/index.css';
+  const handleReset = () => setResult(null);
 
-function App() {
-  const [appStatus, setAppStatus] = useState<AppStatus>('idle');
-  const [clients, setClients] = useState<Client[]>([]);
-  const [databases, setDatabases] = useState<{ [key: string]: any[] }>({});
-  const [currentClientIndex, setCurrentClientIndex] = useState(0);
-  const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [projectName, setProjectName] = useState<string>('');
-  const [username, setUsername] = useState<string | null>(null);
-  const [historicalReport, setHistoricalReport] = useState<any | null>(null);
+  // Ordenamos por Customer y SCORE (aunque ya viene ordenado desde el servicio)
+  const orderedMatches = useMemo<MatchRecord[]>(() => {
+    if (!result) return [];
+    return [...result.matches].sort((a, b) => {
+      const ca = (a.PRUEBA_customer ?? "").localeCompare(b.PRUEBA_customer ?? "");
+      if (ca !== 0) return ca;
+      return b.SCORE - a.SCORE;
+    });
+  }, [result]);
 
-  const handleLoginSuccess = (user: string) => {
-    setUsername(user);
-    setAppStatus('idle'); // Vuelve a 'idle' para mostrar la pantalla de carga de archivo
-  };
-
-  const handleFileSelected = (file: File) => {
-    setSelectedFile(file);
-    setAppStatus('project_name');
-  };
-
-  const handleProjectNameSet = async (name: string) => {
-    if (!selectedFile) return;
-    setProjectName(name);
-    setAppStatus('enriching');
-    try {
-      const parsedClients = await parseClientFile(selectedFile);
-      const enrichedClients = await enrichClientsWithGeoData(parsedClients as Client[]);
-      setClients(enrichedClients);
-      setAppStatus('uploading_databases');
-    } catch (error) {
-      console.error("Error processing file:", error);
-      setAppStatus('error');
-    }
-  };
-
-  const handleDatabasesLoaded = (db: { [key: string]: any[] }) => {
-    setDatabases(db);
-    setAppStatus('validating');
-    processNextClient(clients[0], db);
-  };
-
-  const processNextClient = async (client: Client, db: { [key: string]: any[] }) => {
-    setAppStatus('validating');
-    const matches = await findPotentialMatches(client, db);
-    setClients(prev => prev.map(c => c.id === client.id ? { ...c, matches } : c));
-  };
-
-  const handleValidationStep = (result: ValidationResult) => {
-    setValidationResults(prev => [...prev, result]);
-    const nextClientIndex = currentClientIndex + 1;
-    if (nextClientIndex < clients.length) {
-      setCurrentClientIndex(nextClientIndex);
-      processNextClient(clients[nextClientIndex], databases);
-    } else {
-      setAppStatus('complete');
-    }
-  };
-
-  const handleReset = () => {
-    setAppStatus('idle');
-    setClients([]);
-    setDatabases({});
-    setCurrentClientIndex(0);
-    setValidationResults([]);
-    setSelectedFile(null);
-    setProjectName('');
-    setHistoricalReport(null);
-  };
-
-  const handleViewHistory = (report: any) => {
-    setHistoricalReport(report);
-    setAppStatus('complete');
-  };
-
-  const renderScreen = () => {
-    if (!username) {
-      return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
-    }
-
-    if (historicalReport) {
-        return <ResultsDashboard 
-            results={historicalReport.results} 
-            clients={historicalReport.clients} 
-            onReset={handleReset} 
-            isHistoric={true}
-            projectName={historicalReport.projectName}
-        />;
-    }
-
-    switch (appStatus) {
-      case 'idle':
-        return <FileUpload onFileSelected={handleFileSelected} onViewHistory={handleViewHistory} />;
-      case 'project_name':
-        return <ProjectNameScreen onProjectNameSet={handleProjectNameSet} />;
-      case 'uploading_databases':
-        return <DatabaseUploadScreen onDatabasesLoaded={handleDatabasesLoaded} projectName={projectName} />;
-      case 'validating':
-        const currentClient = clients[currentClientIndex];
-        return (
-          <ValidationScreen
-            client={currentClient}
-            matches={currentClient.matches || []}
-            onSelectMatch={(match) => handleValidationStep({ clientId: currentClient.id, status: 'Validado', reason: match.reason, officialData: match })}
-            onMarkNotValidated={() => handleValidationStep({ clientId: currentClient.id, status: 'No Validado', reason: 'No se encontraron coincidencias adecuadas.' })}
-            progress={{ current: currentClientIndex + 1, total: clients.length }}
-          />
-        );
-      case 'complete':
-        return <ResultsDashboard results={validationResults} clients={clients} onReset={handleReset} projectName={projectName} username={username} isHistoric={false} />;
-      case 'error':
-        return (
-          <div className="text-center mt-10">
-            <p className="text-red-600 font-semibold text-lg">Ha ocurrido un error. Por favor, reinicia el proceso.</p>
-            <button onClick={handleReset} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Volver al inicio</button>
-          </div>
-        );
-      case 'enriching':
-      default:
-        return (
-          <div className="text-center mt-10">
-            <p className="text-gray-600 font-semibold text-lg">Procesando...</p>
-          </div>
-        );
-    }
-  };
+  if (!result) {
+    return (
+      <div style={{ padding: 16 }}>
+        <h1 style={{ marginBottom: 12 }}>RAQA – Buscador de coincidencias</h1>
+        <p style={{ marginTop: 0, color: "#555" }}>
+          Sube tu fichero <strong>PRUEBA.xlsx</strong> y hasta <strong>4 Excel</strong> del Ministerio.
+          Calcularemos coincidencias con la metodología determinista (sin IA).
+        </p>
+        <DatabaseUploadScreen onResult={setResult} />
+      </div>
+    );
+  }
 
   return (
-    <Layout>
-      {renderScreen()}
-    </Layout>
+    <div style={{ padding: 16 }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <h1 style={{ margin: 0, flex: 1 }}>RAQA – Resultados</h1>
+        <button
+          onClick={handleReset}
+          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #999", cursor: "pointer" }}
+        >
+          Reiniciar
+        </button>
+      </header>
+
+      {/* Resumen */}
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, minmax(120px, 1fr))",
+          gap: 8,
+          marginBottom: 16,
+        }}
+      >
+        <div style={cardStyle}>
+          <div style={labelStyle}>Total PRUEBA</div>
+          <div style={valueStyle}>{result.summary.n_prueba}</div>
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>Alta confianza</div>
+          <div style={valueStyle}>{result.summary.alta}</div>
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>Revisar</div>
+          <div style={valueStyle}>{result.summary.revisar}</div>
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>Sin coincidencia</div>
+          <div style={valueStyle}>{result.summary.sin}</div>
+        </div>
+      </section>
+
+      {/* Tabla simple de matches */}
+      <section style={{ marginBottom: 24 }}>
+        <h2 style={{ marginTop: 0 }}>Matches (ordenados por SCORE)</h2>
+        <div style={{ overflowX: "auto" }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Customer</th>
+                <th style={thStyle}>PRUEBA_nombre</th>
+                <th style={thStyle}>PRUEBA_street</th>
+                <th style={thStyle}>PRUEBA_city</th>
+                <th style={thStyle}>PRUEBA_cp</th>
+                <th style={thStyle}>MIN_nombre</th>
+                <th style={thStyle}>MIN_via</th>
+                <th style={thStyle}>MIN_num</th>
+                <th style={thStyle}>MIN_municipio</th>
+                <th style={thStyle}>MIN_cp</th>
+                <th style={thStyle}>SCORE</th>
+                <th style={thStyle}>TIER</th>
+                <th style={thStyle}>Fuente</th>
+                <th style={thStyle}>Código centro (C)</th>
+                <th style={thStyle}>Fecha última aut. (Y)</th>
+                <th style={thStyle}>Oferta asistencial (AC)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orderedMatches.map((m, i) => (
+                <tr key={i}>
+                  <td style={tdStyle}>{m.PRUEBA_customer ?? ""}</td>
+                  <td style={tdStyle}>{m.PRUEBA_nombre}</td>
+                  <td style={tdStyle}>{m.PRUEBA_street}</td>
+                  <td style={tdStyle}>{m.PRUEBA_city}</td>
+                  <td style={tdStyle}>{m.PRUEBA_cp ?? ""}</td>
+                  <td style={tdStyle}>{m.MIN_nombre ?? ""}</td>
+                  <td style={tdStyle}>{m.MIN_via ?? ""}</td>
+                  <td style={tdStyle}>{m.MIN_num ?? ""}</td>
+                  <td style={tdStyle}>{m.MIN_municipio ?? ""}</td>
+                  <td style={tdStyle}>{m.MIN_cp ?? ""}</td>
+                  <td style={tdStyle}>{m.SCORE.toFixed(3)}</td>
+                  <td style={tdStyle}>
+                    <span style={tierBadgeStyle(m.TIER)}>{m.TIER}</span>
+                  </td>
+                  <td style={tdStyle}>{m.MIN_source ?? ""}</td>
+                  <td style={tdStyle}>{m.MIN_codigo_centro ?? ""}</td>
+                  <td style={tdStyle}>{m.MIN_fecha_autoriz ?? ""}</td>
+                  <td style={tdStyle}>{m.MIN_oferta_asist ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* (Opcional) Vista rápida del JSON para depuración */}
+      <details>
+        <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto</summary>
+        <pre
+          style={{
+            background: "#0b1021",
+            color: "#cde6ff",
+            padding: 12,
+            borderRadius: 8,
+            maxHeight: 320,
+            overflow: "auto",
+            fontSize: 12,
+          }}
+        >
+{JSON.stringify(result, null, 2)}
+        </pre>
+      </details>
+    </div>
   );
 }
 
-const ProjectNameScreen: React.FC<{ onProjectNameSet: (name: string) => void }> = ({ onProjectNameSet }) => {
-    const [name, setName] = useState('');
-    return (
-        <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-lg mx-auto text-center">
-            <h2 className="text-2xl font-bold mb-4">Set Project Name</h2>
-            <p className="text-gray-700 mb-4">Please enter a name for this validation project.</p>
-            <input 
-                type="text" 
-                value={name} 
-                onChange={(e) => setName(e.target.value)} 
-                placeholder="E.g., Client Validation Q3"
-                className="w-full p-2 border rounded-md mb-4"
-            />
-            <button 
-                onClick={() => onProjectNameSet(name)}
-                disabled={name.trim() === ''}
-                className="w-full py-2 px-4 bg-blue-600 text-white rounded-md disabled:bg-gray-400"
-            >
-                Continue
-            </button>
-        </div>
-    );
+// ───────── estilos inline sencillos para no depender de CSS externo ─────────
+
+const cardStyle: React.CSSProperties = {
+  border: "1px solid #e5e5e5",
+  borderRadius: 8,
+  padding: "10px 12px",
+  background: "#fafafa",
 };
 
-export default App;
+const labelStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#666",
+};
+
+const valueStyle: React.CSSProperties = {
+  fontSize: 20,
+  fontWeight: 700,
+};
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  fontSize: 13,
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  borderBottom: "2px solid #ddd",
+  padding: "8px 6px",
+  background: "#f7f7f7",
+  position: "sticky",
+  top: 0,
+  zIndex: 1,
+};
+
+const tdStyle: React.CSSProperties = {
+  borderBottom: "1px solid #eee",
+  padding: "6px",
+  verticalAlign: "top",
+};
+
+function tierBadgeStyle(tier: string): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+  };
+  if (tier === "ALTA") return { ...base, background: "#e8f5e9", color: "#2e7d32", border: "1px solid #c8e6c9" };
+  if (tier === "REVISAR") return { ...base, background: "#fff8e1", color: "#f57f17", border: "1px solid #ffe082" };
+  return { ...base, background: "#ffebee", color: "#c62828", border: "1px solid #ffcdd2" };
+}
