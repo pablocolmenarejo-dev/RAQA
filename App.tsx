@@ -8,15 +8,17 @@ import { exportMatchesToExcel } from "@/services/reportGeneratorService";
 import type { MatchOutput, MatchRecord } from "@/types";
 
 const LS_KEY = "raqa:decisions:v1";
+type TierFilter = "ALL" | "ALTA" | "REVISAR" | "SIN";
 
 export default function App() {
   const [result, setResult] = useState<MatchOutput | null>(null);
   const [showWizard, setShowWizard] = useState(false);
+  const [wizardFilter, setWizardFilter] = useState<TierFilter>("ALL");
 
   // Decisiones persistentes (key -> decision)
   const [decisions, setDecisions] = useState<DecisionMap>({});
 
-  // Hidratar desde localStorage al arrancar la app
+  // Hidratar decisiones
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -24,24 +26,20 @@ export default function App() {
     } catch {}
   }, []);
 
-  // Persistir en localStorage cuando cambien
+  // Persistir decisiones
   useEffect(() => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(decisions));
     } catch {}
   }, [decisions]);
 
-  // Cuando recibimos un nuevo resultado, podemos “limpiar” decisiones huérfanas
+  // Limpiar decisiones huérfanas al cambiar matches
   useEffect(() => {
     if (!result?.matches?.length) return;
-    const validKeys = new Set(
-      result.matches.map((m) => makeMatchKey(m))
-    );
+    const validKeys = new Set(result.matches.map((m) => makeMatchKey(m)));
     setDecisions((prev) => {
       const next: DecisionMap = {};
-      for (const [k, v] of Object.entries(prev)) {
-        if (validKeys.has(k)) next[k] = v;
-      }
+      for (const [k, v] of Object.entries(prev)) if (validKeys.has(k)) next[k] = v;
       return next;
     });
   }, [result?.matches]);
@@ -49,16 +47,17 @@ export default function App() {
   const handleReset = () => {
     setResult(null);
     setShowWizard(false);
-    // NO borramos decisions para conservar lo ya validado,
-    // si quieres borrar también decisiones, descomenta la siguiente línea:
+    setWizardFilter("ALL");
+    // Si prefieres borrar también decisiones, descomenta:
     // setDecisions({});
   };
 
-  const openValidation = () => {
+  const openValidation = (tier?: "ALTA" | "REVISAR" | "SIN") => {
     if (!result?.matches?.length) {
       alert("No hay coincidencias todavía. Ejecuta el matching primero.");
       return;
     }
+    setWizardFilter(tier ?? "ALL");
     setShowWizard(true);
   };
 
@@ -67,11 +66,18 @@ export default function App() {
     setDecisions((prev) => ({ ...prev, [key]: d }));
   };
 
-  // matches anotados con decision actual
+  // Data anotada con decisión (para la tabla)
   const annotated = useMemo(() => {
     const arr = result?.matches ?? [];
     return arr.map((m) => ({ ...m, __decision: decisions[makeMatchKey(m)] as Decision | undefined }));
   }, [result?.matches, decisions]);
+
+  // Filtrado para el Wizard
+  const matchesForWizard = useMemo(() => {
+    const arr = result?.matches ?? [];
+    if (wizardFilter === "ALL") return arr;
+    return arr.filter((m) => m.TIER === wizardFilter);
+  }, [result?.matches, wizardFilter]);
 
   if (!result) {
     return (
@@ -114,27 +120,27 @@ export default function App() {
         </button>
       </header>
 
-      {/* Resumen + botón Ir a Validación; le pasamos las decisiones para el donut */}
+      {/* Resumen + accesos a validación (por TIER o todos) */}
       <ResultsDashboard
         result={result}
         decisions={decisions}
-        onOpenValidation={openValidation}
+        onOpenValidation={openValidation} // acepta sin parámetro (todos) o con TIER
       />
 
-      {/* Tabla por customer con badges de estado */}
+      {/* Tabla por customer con badge de validación */}
       <ClientTable data={annotated} decisions={decisions} />
 
-      {/* Asistente de validación (modal) */}
+      {/* Wizard de validación (filtrado por TIER) */}
       {showWizard && (
         <ValidationWizard
-          matches={result.matches}
+          matches={matchesForWizard}
           decisions={decisions}
           onDecide={handleDecide}
           onClose={() => setShowWizard(false)}
         />
       )}
 
-      {/* (Opcional) JSON bruto */}
+      {/* (Opcional) JSON */}
       <details style={{ marginTop: 12 }}>
         <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto</summary>
         <pre
@@ -148,9 +154,10 @@ export default function App() {
             fontSize: 12,
           }}
         >
-{JSON.stringify({ result, decisions }, null, 2)}
+{JSON.stringify({ result, wizardFilter, decisions }, null, 2)}
         </pre>
       </details>
     </div>
   );
 }
+
