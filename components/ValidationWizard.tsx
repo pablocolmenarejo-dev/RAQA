@@ -2,10 +2,24 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { MatchRecord } from "@/types";
 
-type Status = "ACCEPTED" | "REJECTED" | "STANDBY" | undefined;
+export type Decision = "ACCEPTED" | "REJECTED" | "STANDBY";
+export type DecisionMap = Record<string, Decision>;
+
+export function makeMatchKey(m: MatchRecord): string {
+  return [
+    m.PRUEBA_customer ?? "",
+    m.PRUEBA_nombre ?? "",
+    m.PRUEBA_cp ?? "",
+    m.MIN_codigo_centro ?? "",
+  ].join("|");
+}
+
+type Status = Decision | undefined;
 
 interface Props {
   matches: MatchRecord[] | undefined | null;
+  decisions: DecisionMap;
+  onDecide: (match: MatchRecord, decision: Decision) => void;
   onClose: () => void;
 }
 
@@ -22,14 +36,12 @@ function Donut({
   const total = Math.max(1, accepted + standby + rejected + pending);
   const radius = (size - stroke) / 2;
   const C = 2 * Math.PI * radius;
-
   const segs = [
     { v: accepted, c: COLORS.accepted },
     { v: standby,  c: COLORS.standby  },
     { v: rejected, c: COLORS.rejected },
     { v: pending,  c: COLORS.pending  },
   ];
-
   let offset = 0;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
@@ -58,50 +70,46 @@ function Donut({
   );
 }
 
-export default function ValidationWizard({ matches, onClose }: Props) {
+export default function ValidationWizard({ matches, decisions, onDecide, onClose }: Props) {
   const rows = Array.isArray(matches) ? matches : [];
-  console.info("[ValidationWizard] matches recibidos:", rows.length, rows.slice(0, 3));
 
+  // índice local para navegar
   const [idx, setIdx] = useState(0);
-  const [statuses, setStatuses] = useState<Record<number, Status>>({});
 
+  // bloquear scroll de fondo mientras el modal está abierto
   useEffect(() => {
-    // bloqueo del scroll del body mientras el modal esté abierto
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
   }, []);
 
+  // reubicar índice si cambia el número de filas
   useEffect(() => {
-    if (rows.length === 0) {
-      setIdx(0);
-    } else if (idx > rows.length - 1) {
-      setIdx(rows.length - 1);
-    }
+    if (rows.length === 0) setIdx(0);
+    else if (idx > rows.length - 1) setIdx(rows.length - 1);
   }, [rows.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // contadores desde decisions
   const counters = useMemo(() => {
     let acc = 0, rej = 0, stb = 0;
-    for (const s of Object.values(statuses)) {
-      if (s === "ACCEPTED") acc++;
-      else if (s === "REJECTED") rej++;
-      else if (s === "STANDBY")  stb++;
+    for (const m of rows) {
+      const d = decisions[makeMatchKey(m)];
+      if (d === "ACCEPTED") acc++;
+      else if (d === "REJECTED") rej++;
+      else if (d === "STANDBY")  stb++;
     }
     const pending = rows.length - acc - rej - stb;
     return { acc, rej, stb, pending };
-  }, [statuses, rows.length]);
+  }, [decisions, rows]);
 
   const current = rows[idx];
-
-  const setStatus = (s: Exclude<Status, undefined>) => {
-    setStatuses(prev => {
-      const next = { ...prev, [idx]: s };
-      console.info(`[ValidationWizard] idx ${idx} -> status ${s}`);
-      return next;
-    });
-  };
-
+  const currentStatus: Status = current ? decisions[makeMatchKey(current)] : undefined;
   const pct = (n: number) => ((n / Math.max(1, rows.length)) * 100).toFixed(0) + "%";
+
+  const decide = (d: Decision) => {
+    if (!current) return;
+    onDecide(current, d);
+  };
 
   return (
     <div style={{
@@ -121,27 +129,12 @@ export default function ValidationWizard({ matches, onClose }: Props) {
         <h2 style={{ marginTop: 0 }}>Validación de coincidencias</h2>
 
         {rows.length === 0 ? (
-          <>
-            <p style={{ marginTop: 8, color: "#b00020" }}>
-              No se han recibido coincidencias. Vuelve atrás y ejecuta el matching.
-            </p>
-            <pre
-              style={{
-                background: "#0b1021",
-                color: "#cde6ff",
-                padding: 12,
-                borderRadius: 8,
-                maxHeight: 220,
-                overflow: "auto",
-                fontSize: 12,
-              }}
-            >
-{JSON.stringify(matches, null, 2)}
-            </pre>
-          </>
+          <p style={{ marginTop: 8, color: "#b00020" }}>
+            No se han recibido coincidencias. Vuelve atrás y ejecuta el matching.
+          </p>
         ) : (
           <>
-            {/* Resumen con donut */}
+            {/* Donut + leyenda */}
             <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 18 }}>
               <Donut accepted={counters.acc} standby={counters.stb} rejected={counters.rej} pending={counters.pending} />
               <div style={{ fontSize: 14, lineHeight: 1.8 }}>
@@ -177,8 +170,8 @@ export default function ValidationWizard({ matches, onClose }: Props) {
                 <div style={{
                   border: "1px solid #ddd", borderRadius: 8, padding: 12,
                   background:
-                    statuses[idx] === "ACCEPTED" ? "#e8f5e9" :
-                    statuses[idx] === "REJECTED" ? "#ffebee" : "#fff",
+                    currentStatus === "ACCEPTED" ? "#e8f5e9" :
+                    currentStatus === "REJECTED" ? "#ffebee" : "#fff",
                 }}>
                   <h3 style={{ marginTop: 0 }}>Ministerio (mejor match)</h3>
                   <p><strong>Nombre:</strong> {current.MIN_nombre}</p>
@@ -190,12 +183,11 @@ export default function ValidationWizard({ matches, onClose }: Props) {
                   <p><strong>Fecha última autorización (Y):</strong> {current.MIN_fecha_autoriz}</p>
                   <p><strong>Oferta asistencial (AC):</strong> {current.MIN_oferta_asist}</p>
 
-                  {/* SCORE grande y coloreado */}
                   <div style={{
                     marginTop: 10, fontSize: 34, fontWeight: 900,
                     color:
-                      statuses[idx] === "ACCEPTED" ? "#2e7d32" :
-                      statuses[idx] === "REJECTED" ? "#c62828" : "#222",
+                      currentStatus === "ACCEPTED" ? "#2e7d32" :
+                      currentStatus === "REJECTED" ? "#c62828" : "#222",
                   }}>
                     SCORE: {Number(current.SCORE ?? 0).toFixed(3)}
                   </div>
@@ -212,15 +204,15 @@ export default function ValidationWizard({ matches, onClose }: Props) {
               </button>
 
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setStatus("ACCEPTED")}
+                <button onClick={() => decide("ACCEPTED")}
                         style={{ padding: "8px 16px", background: COLORS.accepted, color: "#fff", borderRadius: 6 }}>
                   Aceptar
                 </button>
-                <button onClick={() => setStatus("STANDBY")}
+                <button onClick={() => decide("STANDBY")}
                         style={{ padding: "8px 16px", background: COLORS.standby, color: "#000", borderRadius: 6 }}>
                   StandBy
                 </button>
-                <button onClick={() => setStatus("REJECTED")}
+                <button onClick={() => decide("REJECTED")}
                         style={{ padding: "8px 16px", background: COLORS.rejected, color: "#fff", borderRadius: 6 }}>
                   Rechazar
                 </button>
