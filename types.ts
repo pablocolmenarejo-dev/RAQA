@@ -1,66 +1,38 @@
-// types.ts
-// Tipos compartidos para la metodología de matching determinista (multi-Excel)
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PRUEBA y MINISTERIO (filas crudas tal como vienen de los XLSX parseados en frontend)
-// ─────────────────────────────────────────────────────────────────────────────
+// src/types.ts
 
 export type PruebaRow = Record<string, any>;
-export type MinisterioRow = Record<string, any>;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tiers y umbrales (ref: matchingService.ts)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type MatchTier = "ALTA" | "REVISAR" | "SIN";
-
-export interface Thresholds {
-  alta: number; // 0.85 por defecto
-  baja: number; // 0.65 por defecto
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Resultado de matching (una fila emparejada)
-// ─────────────────────────────────────────────────────────────────────────────
+export type MinisterioAoA = any[][]; // matriz: cada fila es un array, la 1ª fila son cabeceras crudas
 
 export interface MatchRecord {
-  // --- PRUEBA ---
-  PRUEBA_customer?: string | null;
+  PRUEBA_customer: string | null;
   PRUEBA_nombre: string;
   PRUEBA_street: string;
   PRUEBA_city: string;
   PRUEBA_cp: string | null;
   PRUEBA_num: string | null;
 
-  // --- MINISTERIO (mejor candidato) ---
   MIN_nombre: string | null;
   MIN_via: string | null;
   MIN_num: string | null;
   MIN_municipio: string | null;
   MIN_cp: string | null;
 
-  // Claves Ministerio solicitadas + fuente de Excel
-  MIN_codigo_centro: string | null;  // Columna C (REGCESS/CCN)
-  MIN_fecha_autoriz: string | null;  // Columna Y (Fecha última autorización)
-  MIN_oferta_asist: string | null;   // Columna AC (Oferta asistencial)
-  MIN_source: string | null;         // Nombre del Excel origen
+  MIN_codigo_centro: string | null; // C
+  MIN_fecha_autoriz: string | null; // Y
+  MIN_oferta_asist: string | null;  // AC
+  MIN_source: string;               // nombre del excel ministerial
 
-  // Scoring
-  SCORE: number;         // 0..1
-  TIER: MatchTier;       // "ALTA" | "REVISAR" | "SIN"
+  SCORE: number;
+  TIER: "ALTA" | "REVISAR" | "SIN";
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Top-3 candidatos por cada fila de PRUEBA (para revisión rápida en UI)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface TopCandidate {
   PRUEBA_nombre: string;
   PRUEBA_cp: string | null;
   PRUEBA_num: string | null;
 
-  CAND_RANK: number;      // 1..3
-  CAND_SCORE: number;     // 0..1
+  CAND_RANK: number;
+  CAND_SCORE: number;
 
   CAND_MIN_nombre: string | null;
   CAND_MIN_via: string | null;
@@ -68,38 +40,20 @@ export interface TopCandidate {
   CAND_MIN_mun: string | null;
   CAND_MIN_cp: string | null;
 
-  CAND_MIN_codigo_centro: string | null; // C
-  CAND_MIN_fecha_autoriz: string | null; // Y
-  CAND_MIN_oferta_asist: string | null;  // AC
-  CAND_MIN_source: string | null;        // Excel origen
+  CAND_MIN_codigo_centro: string | null;
+  CAND_MIN_fecha_autoriz: string | null;
+  CAND_MIN_oferta_asist: string | null;
+  CAND_MIN_source: string;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Payload que devuelve el motor de matching (y que consume el frontend)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface MatchOutput {
   matches: MatchRecord[];
   top3: TopCandidate[];
   summary: {
-    n_prueba: number;   // nº de filas procesadas (PRUEBA)
+    n_prueba: number;
     alta: number;
     revisar: number;
     sin: number;
-    thresholds: Thresholds;
+    thresholds: { alta: number; baja: number };
   };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// (Opcional) Estructuras de apoyo para la UI
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Agrupar por customer para el “menú por cliente”
-export type MatchesByCustomer = Record<string, MatchRecord[]>;
-
-// Resumen por tier para dashboards rápidos
-export interface TierCounters {
-  ALTA: number;
-  REVISAR: number;
-  SIN: number;
 }
