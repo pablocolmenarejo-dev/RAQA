@@ -10,8 +10,6 @@ import type { MatchOutput } from "@/types";
 export default function App() {
   const [result, setResult] = useState<MatchOutput | null>(null);
   const [showWizard, setShowWizard] = useState(false);
-
-  // decisiones locales por índice de match
   const [decisions, setDecisions] = useState<DecisionMap>({});
 
   const handleReset = () => {
@@ -22,6 +20,14 @@ export default function App() {
 
   const handleDecide = (idx: number, d: Decision) => {
     setDecisions((prev) => ({ ...prev, [idx]: d }));
+  };
+
+  const openValidation = () => {
+    if (!result?.matches?.length) {
+      alert("No hay matches para validar.");
+      return;
+    }
+    setShowWizard(true);
   };
 
   if (!result) {
@@ -65,26 +71,22 @@ export default function App() {
         </button>
       </header>
 
-      {/* Resumen + botón Ir a Validación */}
       <ResultsDashboard
         result={result}
-        onOpenValidation={() => setShowWizard(true)}
+        onOpenValidation={openValidation}
       />
 
-      {/* Tabla por customer */}
       <ClientTable data={result.matches} />
 
-      {/* Asistente de validación */}
       {showWizard && (
         <ValidationWizard
-          result={result}
+          matches={result.matches}           {/* ← AQUÍ EL CAMBIO */}
           decisions={decisions}
           onDecide={handleDecide}
           onClose={() => setShowWizard(false)}
         />
       )}
 
-      {/* (Opcional) JSON bruto */}
       <details style={{ marginTop: 12 }}>
         <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto</summary>
         <pre
