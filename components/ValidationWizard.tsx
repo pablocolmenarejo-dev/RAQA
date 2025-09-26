@@ -1,225 +1,162 @@
 // src/components/ValidationWizard.tsx
-import React, { useMemo, useState } from "react";
-import type { MatchOutput, MatchRecord } from "@/types";
+import React, { useState } from "react";
+import type { MatchRecord } from "@/types";
+import { Pie } from "react-chartjs-2";
 
-// Estados de decisión
-export type Decision = "ACEPTADA" | "STANDBY" | "RECHAZADA";
-export type DecisionMap = Record<number, Decision>; // index en matches -> decisión
-
-type Props = {
-  result: MatchOutput;
-  decisions: DecisionMap;
-  onDecide: (matchIndex: number, d: Decision) => void;
+interface Props {
+  matches: MatchRecord[];
   onClose: () => void;
-};
+}
 
-export default function ValidationWizard({ result, decisions, onDecide, onClose }: Props) {
-  // Índice del match que estamos validando
-  const [i, setI] = useState(0);
+export default function ValidationWizard({ matches, onClose }: Props) {
+  const [idx, setIdx] = useState(0);
+  const [statuses, setStatuses] = useState<Record<number, "ACCEPTED" | "REJECTED" | "STANDBY" | undefined>>({});
 
-  const ordered = result.matches; // ya vienen ordenados en App o matching, pero puede ordenarse aquí si prefieres
+  const handleSet = (status: "ACCEPTED" | "REJECTED" | "STANDBY") => {
+    setStatuses(prev => ({ ...prev, [idx]: status }));
+  };
 
-  const counters = useMemo(() => {
-    let a = 0, s = 0, r = 0, p = 0;
-    for (let k = 0; k < ordered.length; k++) {
-      const d = decisions[k];
-      if (d === "ACEPTADA") a++;
-      else if (d === "STANDBY") s++;
-      else if (d === "RECHAZADA") r++;
-      else p++;
-    }
-    return { aceptadas: a, standby: s, rechazadas: r, pendientes: p, total: ordered.length };
-  }, [ordered, decisions]);
+  const accepted = Object.values(statuses).filter(s => s === "ACCEPTED").length;
+  const rejected = Object.values(statuses).filter(s => s === "REJECTED").length;
+  const standby  = Object.values(statuses).filter(s => s === "STANDBY").length;
+  const pending  = matches.length - accepted - rejected - standby;
 
-  const m = ordered[i];
+  const current = matches[idx];
 
-  const goto = (delta: number) => {
-    const n = ordered.length;
-    const j = Math.max(0, Math.min(n - 1, i + delta));
-    setI(j);
+  const pieData = {
+    labels: ["Aceptadas", "StandBy", "Rechazadas", "Pendientes"],
+    datasets: [{
+      data: [accepted, standby, rejected, pending],
+      backgroundColor: ["#4CAF50", "#FFC107", "#F44336", "#9E9E9E"],
+    }],
   };
 
   return (
-    <div style={overlay}>
-      <div style={modal}>
-        <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-          <h2 style={{ margin: 0, flex: 1 }}>Validación de coincidencias</h2>
-          <button onClick={onClose} style={btnGhost}>Cerrar</button>
-        </header>
+    <div
+      style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+        background: "rgba(0,0,0,0.6)", display: "flex", justifyContent: "center", alignItems: "center",
+        zIndex: 9999, overflowY: "auto",
+      }}
+    >
+      <div
+        style={{
+          background: "#fff", borderRadius: 12, padding: 24, width: "90%", maxWidth: 900,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.3)", position: "relative",
+        }}
+      >
+        <button
+          onClick={onClose}
+          style={{ position: "absolute", top: 12, right: 12, padding: "4px 8px", cursor: "pointer" }}
+        >
+          Cerrar
+        </button>
 
-        {/* Donut de estado */}
-        <Donut aceptadas={counters.aceptadas} standby={counters.standby} rechazadas={counters.rechazadas} pendientes={counters.pendientes} total={counters.total} />
+        <h2 style={{ marginTop: 0 }}>Validación de coincidencias</h2>
 
-        {/* Navegación */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0" }}>
-          <button onClick={() => goto(-1)} disabled={i === 0} style={btn}>← Anterior</button>
-          <div style={{ flex: 1, textAlign: "center" }}>
-            Registro {i + 1} / {ordered.length}
+        <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 20 }}>
+          <div style={{ width: 180, height: 180 }}>
+            <Pie data={pieData} />
           </div>
-          <button onClick={() => goto(+1)} disabled={i === ordered.length - 1} style={btn}>Siguiente →</button>
+          <div>
+            <p><strong>Aceptadas:</strong> {accepted} ({((accepted / matches.length) * 100).toFixed(0)}%)</p>
+            <p><strong>StandBy:</strong> {standby} ({((standby / matches.length) * 100).toFixed(0)}%)</p>
+            <p><strong>Rechazadas:</strong> {rejected} ({((rejected / matches.length) * 100).toFixed(0)}%)</p>
+            <p><strong>Pendientes:</strong> {pending} ({((pending / matches.length) * 100).toFixed(0)}%)</p>
+          </div>
         </div>
 
-        {/* Panel comparado */}
-        {m ? (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={panel}>
-              <h3 style={{ margin: "0 0 6px 0" }}>PRUEBA</h3>
-              <KV k="Customer" v={m.PRUEBA_customer ?? ""} />
-              <KV k="Nombre" v={m.PRUEBA_nombre} />
-              <KV k="Calle" v={m.PRUEBA_street} />
-              <KV k="Municipio" v={m.PRUEBA_city} />
-              <KV k="CP" v={m.PRUEBA_cp ?? ""} />
-              <KV k="Nº vía" v={m.PRUEBA_num ?? ""} />
+        <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
+          Registro {idx + 1} / {matches.length}
+        </p>
+
+        {current && (
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
+            {/* Datos PRUEBA */}
+            <div style={{ flex: 1, border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
+              <h3 style={{ marginTop: 0 }}>PRUEBA</h3>
+              <p><strong>Customer:</strong> {current.PRUEBA_customer ?? ""}</p>
+              <p><strong>Nombre:</strong> {current.PRUEBA_nombre}</p>
+              <p><strong>Calle:</strong> {current.PRUEBA_street}</p>
+              <p><strong>Municipio:</strong> {current.PRUEBA_city}</p>
+              <p><strong>CP:</strong> {current.PRUEBA_cp}</p>
+              <p><strong>Nº vía:</strong> {current.PRUEBA_num}</p>
             </div>
 
-            <div style={panel}>
-              <h3 style={{ margin: "0 0 6px 0" }}>Ministerio (mejor match)</h3>
-              <KV k="Nombre" v={m.MIN_nombre ?? ""} />
-              <KV k="Vía" v={m.MIN_via ?? ""} />
-              <KV k="Nº vía" v={m.MIN_num ?? ""} />
-              <KV k="Municipio" v={m.MIN_municipio ?? ""} />
-              <KV k="CP" v={m.MIN_cp ?? ""} />
-              <KV k="Código centro (C)" v={m.MIN_codigo_centro ?? ""} />
-              <KV k="Fecha última autorización (Y)" v={m.MIN_fecha_autoriz ?? ""} />
-              <KV k="Oferta asistencial (AC)" v={m.MIN_oferta_asist ?? ""} />
-              <KV k="Fuente" v={m.MIN_source ?? ""} />
-              <KV k="SCORE" v={m.SCORE.toFixed(4)} />
-              <KV k="TIER" v={m.TIER} />
+            {/* Datos MINISTERIO */}
+            <div
+              style={{
+                flex: 1, border: "1px solid #ddd", borderRadius: 8, padding: 12,
+                background:
+                  statuses[idx] === "ACCEPTED" ? "#e8f5e9" :
+                  statuses[idx] === "REJECTED" ? "#ffebee" : "#fff",
+              }}
+            >
+              <h3 style={{ marginTop: 0 }}>Ministerio (mejor match)</h3>
+              <p><strong>Nombre:</strong> {current.MIN_nombre}</p>
+              <p><strong>Vía:</strong> {current.MIN_via}</p>
+              <p><strong>Nº vía:</strong> {current.MIN_num}</p>
+              <p><strong>Municipio:</strong> {current.MIN_municipio}</p>
+              <p><strong>CP:</strong> {current.MIN_cp}</p>
+              <p><strong>Código centro (C):</strong> {current.MIN_codigo_centro}</p>
+              <p><strong>Fecha última autorización (Y):</strong> {current.MIN_fecha_autoriz}</p>
+              <p><strong>Oferta asistencial (AC):</strong> {current.MIN_oferta_asist}</p>
+
+              {/* === SCORE grande === */}
+              <p
+                style={{
+                  fontSize: 28,
+                  fontWeight: 800,
+                  color: statuses[idx] === "ACCEPTED" ? "#2e7d32"
+                        : statuses[idx] === "REJECTED" ? "#c62828"
+                        : "#333",
+                  marginTop: 12,
+                }}
+              >
+                SCORE: {current.SCORE.toFixed(3)}
+              </p>
             </div>
           </div>
-        ) : (
-          <p>No hay registros.</p>
         )}
 
-        {/* Botones de decisión */}
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={() => onDecide(i, "ACEPTADA")} style={btnAccept}>Aceptar</button>
-          <button onClick={() => onDecide(i, "STANDBY")} style={btnWarn}>StandBy</button>
-          <button onClick={() => onDecide(i, "RECHAZADA")} style={btnReject}>Rechazar</button>
+        {/* Controles */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
+          <button
+            onClick={() => setIdx(i => Math.max(0, i - 1))}
+            disabled={idx === 0}
+            style={{ padding: "8px 16px" }}
+          >
+            ← Anterior
+          </button>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              onClick={() => handleSet("ACCEPTED")}
+              style={{ padding: "8px 16px", background: "#4CAF50", color: "white", borderRadius: 6 }}
+            >
+              Aceptar
+            </button>
+            <button
+              onClick={() => handleSet("STANDBY")}
+              style={{ padding: "8px 16px", background: "#FFC107", color: "black", borderRadius: 6 }}
+            >
+              StandBy
+            </button>
+            <button
+              onClick={() => handleSet("REJECTED")}
+              style={{ padding: "8px 16px", background: "#F44336", color: "white", borderRadius: 6 }}
+            >
+              Rechazar
+            </button>
+          </div>
+          <button
+            onClick={() => setIdx(i => Math.min(matches.length - 1, i + 1))}
+            disabled={idx === matches.length - 1}
+            style={{ padding: "8px 16px" }}
+          >
+            Siguiente →
+          </button>
         </div>
       </div>
     </div>
   );
 }
-
-function KV({ k, v }: { k: string; v: string }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 6, fontSize: 13 }}>
-      <div style={{ color: "#666" }}>{k}</div>
-      <div style={{ fontWeight: 600 }}>{v}</div>
-    </div>
-  );
-}
-
-function Donut(props: { aceptadas: number; standby: number; rechazadas: number; pendientes: number; total: number }) {
-  const { aceptadas, standby, rechazadas, pendientes, total } = props;
-  const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0);
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 12, alignItems: "center" }}>
-      <svg viewBox="0 0 36 36" width={140} height={140}>
-        {/* fondo */}
-        <path d="M18 2a16 16 0 1 1 0 32a16 16 0 1 1 0-32" fill="#f5f5f5" />
-        {/* segmentos */}
-        {arc(0, pct(aceptadas), "#2e7d32")}
-        {arc(pct(aceptadas), pct(aceptadas) + pct(standby), "#f57f17")}
-        {arc(pct(aceptadas) + pct(standby), pct(aceptadas) + pct(standby) + pct(rechazadas), "#c62828")}
-      </svg>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-        <Legend color="#2e7d32" label="Aceptadas" value={`${aceptadas} (${pct(aceptadas)}%)`} />
-        <Legend color="#f57f17" label="StandBy" value={`${standby} (${pct(standby)}%)`} />
-        <Legend color="#c62828" label="Rechazadas" value={`${rechazadas} (${pct(rechazadas)}%)`} />
-        <Legend color="#666" label="Pendientes" value={`${pendientes} (${pct(pendientes)}%)`} />
-      </div>
-    </div>
-  );
-}
-
-// Dibuja arco circular sobre 36x36, del porcentaje start al end (0..100)
-function arc(startPct: number, endPct: number, color: string) {
-  if (endPct <= startPct) return null;
-  const start = (startPct / 100) * 2 * Math.PI;
-  const end = (endPct / 100) * 2 * Math.PI;
-  const r = 15.5;
-  const cx = 18, cy = 18;
-
-  const x1 = cx + r * Math.cos(start), y1 = cy + r * Math.sin(start);
-  const x2 = cx + r * Math.cos(end), y2 = cy + r * Math.sin(end);
-  const large = end - start > Math.PI ? 1 : 0;
-
-  const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-  return <path d={d} fill={color} opacity={0.9} />;
-}
-
-function Legend({ color, label, value }: { color: string; label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ width: 10, height: 10, background: color, borderRadius: 2, display: "inline-block" }} />
-      <span style={{ fontWeight: 700 }}>{label}:</span>
-      <span>{value}</span>
-    </div>
-  );
-}
-
-const overlay: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,.35)",
-  display: "grid",
-  placeItems: "center",
-  zIndex: 9999,
-};
-
-const modal: React.CSSProperties = {
-  width: "min(1100px, 96vw)",
-  maxHeight: "90vh",
-  overflow: "auto",
-  background: "#fff",
-  borderRadius: 12,
-  padding: 16,
-  boxShadow: "0 10px 40px rgba(0,0,0,.25)",
-};
-
-const panel: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
-  borderRadius: 10,
-  padding: 12,
-  background: "#fafafa",
-};
-
-const btn: React.CSSProperties = {
-  padding: "8px 12px",
-  borderRadius: 8,
-  border: "1px solid #999",
-  background: "#fff",
-  cursor: "pointer",
-};
-
-const btnGhost: React.CSSProperties = {
-  ...btn,
-  borderColor: "#bbb",
-};
-
-const btnAccept: React.CSSProperties = {
-  ...btn,
-  borderColor: "#2e7d32",
-  background: "#e8f5e9",
-  color: "#2e7d32",
-  fontWeight: 700,
-};
-
-const btnWarn: React.CSSProperties = {
-  ...btn,
-  borderColor: "#f57f17",
-  background: "#fff8e1",
-  color: "#f57f17",
-  fontWeight: 700,
-};
-
-const btnReject: React.CSSProperties = {
-  ...btn,
-  borderColor: "#c62828",
-  background: "#ffebee",
-  color: "#c62828",
-  fontWeight: 700,
-};
