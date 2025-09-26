@@ -61,7 +61,7 @@ export default function App() {
     setResult(null);
     setShowWizard(false);
     setWizardFilter("ALL");
-    // Si prefieres borrar también decisiones/comentarios, descomenta:
+    // Si quieres limpiar también:
     // setDecisions({});
     // setComments({});
   };
@@ -82,6 +82,16 @@ export default function App() {
   const handleComment = (m: MatchRecord, text: string) => {
     const key = makeMatchKey(m);
     setComments((prev) => ({ ...prev, [key]: text }));
+  };
+
+  const handleExport = async () => {
+    if (!result) return;
+    try {
+      await exportMatchesToExcel(result, decisions, comments, "matches.xlsx");
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || "No se pudo exportar el Excel. Revisa la consola.");
+    }
   };
 
   // Data anotada (para la tabla)
@@ -120,7 +130,7 @@ export default function App() {
         <h1 style={{ margin: 0, flex: 1 }}>RAQA – Resultados</h1>
 
         <button
-          onClick={() => exportMatchesToExcel(result, decisions, comments, "matches.xlsx")}
+          onClick={handleExport}
           style={{
             padding: "8px 12px",
             borderRadius: 8,
