@@ -7,7 +7,8 @@ import ValidationWizard, { Decision, DecisionMap, makeMatchKey } from "@/compone
 import { exportMatchesToExcel } from "@/services/reportGeneratorService";
 import type { MatchOutput, MatchRecord } from "@/types";
 
-const LS_KEY = "raqa:decisions:v1";
+const LS_KEY_DECISIONS = "raqa:decisions:v1";
+const LS_KEY_COMMENTS  = "raqa:comments:v1";
 type TierFilter = "ALL" | "ALTA" | "REVISAR" | "SIN";
 
 export default function App() {
@@ -17,28 +18,40 @@ export default function App() {
 
   // Decisiones persistentes (key -> decision)
   const [decisions, setDecisions] = useState<DecisionMap>({});
+  // Comentarios persistentes (key -> texto)
+  const [comments, setComments] = useState<Record<string, string>>({});
 
-  // Hidratar decisiones
+  // Hidratar desde localStorage
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) setDecisions(JSON.parse(raw));
+      const rawD = localStorage.getItem(LS_KEY_DECISIONS);
+      if (rawD) setDecisions(JSON.parse(rawD));
+    } catch {}
+    try {
+      const rawC = localStorage.getItem(LS_KEY_COMMENTS);
+      if (rawC) setComments(JSON.parse(rawC));
     } catch {}
   }, []);
 
-  // Persistir decisiones
+  // Persistir
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(decisions));
-    } catch {}
+    try { localStorage.setItem(LS_KEY_DECISIONS, JSON.stringify(decisions)); } catch {}
   }, [decisions]);
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEY_COMMENTS, JSON.stringify(comments)); } catch {}
+  }, [comments]);
 
-  // Limpiar decisiones huérfanas al cambiar matches
+  // Limpiar claves huérfanas al cambiar matches
   useEffect(() => {
     if (!result?.matches?.length) return;
     const validKeys = new Set(result.matches.map((m) => makeMatchKey(m)));
     setDecisions((prev) => {
       const next: DecisionMap = {};
+      for (const [k, v] of Object.entries(prev)) if (validKeys.has(k)) next[k] = v;
+      return next;
+    });
+    setComments((prev) => {
+      const next: Record<string, string> = {};
       for (const [k, v] of Object.entries(prev)) if (validKeys.has(k)) next[k] = v;
       return next;
     });
@@ -48,8 +61,9 @@ export default function App() {
     setResult(null);
     setShowWizard(false);
     setWizardFilter("ALL");
-    // Si prefieres borrar también decisiones, descomenta:
+    // Si prefieres borrar también decisiones/comentarios, descomenta:
     // setDecisions({});
+    // setComments({});
   };
 
   const openValidation = (tier?: "ALTA" | "REVISAR" | "SIN") => {
@@ -65,12 +79,20 @@ export default function App() {
     const key = makeMatchKey(m);
     setDecisions((prev) => ({ ...prev, [key]: d }));
   };
+  const handleComment = (m: MatchRecord, text: string) => {
+    const key = makeMatchKey(m);
+    setComments((prev) => ({ ...prev, [key]: text }));
+  };
 
-  // Data anotada con decisión (para la tabla)
+  // Data anotada (para la tabla)
   const annotated = useMemo(() => {
     const arr = result?.matches ?? [];
-    return arr.map((m) => ({ ...m, __decision: decisions[makeMatchKey(m)] as Decision | undefined }));
-  }, [result?.matches, decisions]);
+    return arr.map((m) => ({
+      ...m,
+      __decision: decisions[makeMatchKey(m)] as Decision | undefined,
+      __comment:  comments[makeMatchKey(m)] ?? "",
+    }));
+  }, [result?.matches, decisions, comments]);
 
   // Filtrado para el Wizard
   const matchesForWizard = useMemo(() => {
@@ -98,7 +120,7 @@ export default function App() {
         <h1 style={{ margin: 0, flex: 1 }}>RAQA – Resultados</h1>
 
         <button
-          onClick={() => exportMatchesToExcel(result, decisions, "matches.xlsx")}
+          onClick={() => exportMatchesToExcel(result, decisions, comments, "matches.xlsx")}
           style={{
             padding: "8px 12px",
             borderRadius: 8,
@@ -120,27 +142,25 @@ export default function App() {
         </button>
       </header>
 
-      {/* Resumen + accesos a validación (por TIER o todos) */}
       <ResultsDashboard
         result={result}
         decisions={decisions}
-        onOpenValidation={openValidation} // acepta sin parámetro (todos) o con TIER
+        onOpenValidation={openValidation}
       />
 
-      {/* Tabla por customer con badge de validación */}
-      <ClientTable data={annotated} decisions={decisions} />
+      <ClientTable data={annotated} decisions={decisions} comments={comments} />
 
-      {/* Wizard de validación (filtrado por TIER) */}
       {showWizard && (
         <ValidationWizard
           matches={matchesForWizard}
           decisions={decisions}
+          comments={comments}
           onDecide={handleDecide}
+          onComment={handleComment}
           onClose={() => setShowWizard(false)}
         />
       )}
 
-      {/* (Opcional) JSON */}
       <details style={{ marginTop: 12 }}>
         <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto</summary>
         <pre
@@ -154,10 +174,9 @@ export default function App() {
             fontSize: 12,
           }}
         >
-{JSON.stringify({ result, wizardFilter, decisions }, null, 2)}
+{JSON.stringify({ result, wizardFilter, decisions, comments }, null, 2)}
         </pre>
       </details>
     </div>
   );
 }
-
