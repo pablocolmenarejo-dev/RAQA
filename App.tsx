@@ -98,7 +98,7 @@ export default function App() {
         <h1 style={{ margin: 0, flex: 1 }}>RAQA – Resultados</h1>
 
         <button
-          onClick={() => exportMatchesToExcel(result, "matches.xlsx")}
+          onClick={() => exportMatchesToExcel(result, decisions, "matches.xlsx")}
           style={{
             padding: "8px 12px",
             borderRadius: 8,
