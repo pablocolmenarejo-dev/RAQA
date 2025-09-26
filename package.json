@@ -1,7 +1,7 @@
 {
   "name": "pharmaclient-validator",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,22 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-  "@emotion/react": "^11.11.4",
-  "@emotion/styled": "^11.11.5",
-  "@google/genai": "^0.14.0",
-  "@mui/material": "^5.15.20",
-  "firebase": "^10.12.2",
-  "lucide-react": "^0.400.0",
-  "papaparse": "^5.4.1",
-  "react": "^18.3.1",
-  "react-dom": "^18.3.1",
-  "react-dropzone": "^14.2.3",
-  "react-router-dom": "^6.23.1",
-  "string-similarity": "^4.0.4"
-},
+    "xlsx": "^0.18.5"
+  },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "typescript": "^5.6.2",
+    "vite": "^6.3.6"
   }
 }
