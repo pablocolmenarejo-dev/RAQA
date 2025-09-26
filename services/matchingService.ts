@@ -1,6 +1,3 @@
-// src/services/matchingService.ts
-// Igual que el script Python: Ministerio por posición (letras → índice), bloqueo por CP→municipio, mismos pesos/bonus.
-
 import type { MatchOutput, MatchRecord, TopCandidate, PruebaRow, MinisterioAoA } from "@/types";
 
 const THRESHOLD_ALTA = 0.85;
@@ -27,7 +24,7 @@ function tokenSetRatio(a:string,b:string){ const A=new Set(tokens(a)), B=new Set
 function partialLike(a:string,b:string){ const grams=(s:string,n:number)=>{ const u=normText(s); const out:string[]=[]; for(let i=0;i+n<=u.length;i++){ const g=u.slice(i,i+n); if(g.trim()) out.push(g);} return new Set(out); }; const A=grams(a,3), B=grams(b,3); if(!A.size&&!B.size) return 0; let inter=0; for(const g of A) if(B.has(g)) inter++; return (2*inter)/(A.size+B.size); }
 function fuzzy(a:string,b:string){ return Math.max(tokenSetRatio(a,b), partialLike(a,b)); }
 
-const MIN_LETTERS:Record<string,string>={ nombre:"E", via:"M", mun:"K", cp:"O", num:"N", ccn:"C", fecha:"Y", oferta:"AC" };
+const MIN_LETTERS={ nombre:"E", via:"M", mun:"K", cp:"O", num:"N", ccn:"C", fecha:"Y", oferta:"AC" } as const;
 function colIndex(letter:string){ let u=letter.trim().toUpperCase(), idx=0; for(let i=0;i<u.length;i++) idx=idx*26+(u.charCodeAt(i)-64); return idx-1; }
 
 export function matchClientsAgainstMinisterios(
@@ -37,7 +34,7 @@ export function matchClientsAgainstMinisterios(
   // PRUEBA → derivados
   const need = ["INFO_1","STREET","CITY","PostalCode"];
   const cols = new Set(Object.keys(pruebaRows[0]||{}));
-  for(const n of need) if(!cols.has(n)) throw new Error(`En PRUEBA falta '${n}'.`);
+  for(const n of need) if(!cols.has(n)) throw new Error(`En PRUEBA falta '${n}'. Columnas: ${Array.from(cols).join(", ")}`);
 
   const dfp = pruebaRows.map((r)=> {
     const name = [r["INFO_1"]||"", r["INFO_2"]||"", r["INFO_3"]||""].join(" ").trim();
@@ -60,7 +57,7 @@ export function matchClientsAgainstMinisterios(
   for(const [source, aoa] of Object.entries(ministeriosAoA)){
     if(!aoa || aoa.length===0) continue;
 
-    // 1) Detectar la fila de cabeceras (como en Python: heurística por keywords)
+    // 1) Detectar fila de cabeceras (heurística, como en Python)
     let headerRowIdx = 0, bestKW=-1;
     const KEYS=["nombre","centro","municipio","provincia","comunidad","postal","direccion","dirección","via","vía","numero","número"];
     for(let i=0;i<Math.min(30, aoa.length); i++){
@@ -72,7 +69,7 @@ export function matchClientsAgainstMinisterios(
     const headers = aoa[headerRowIdx] || [];
     const body = aoa.slice(headerRowIdx+1).filter(r=> Array.isArray(r) && r.some(v=>v!==null && v!==""));
 
-    // 2) Mapeo por letras → índice
+    // 2) Índices por letra
     const idx = {
       nombre: colIndex(MIN_LETTERS.nombre),
       via:    colIndex(MIN_LETTERS.via),
@@ -84,8 +81,6 @@ export function matchClientsAgainstMinisterios(
       oferta: colIndex(MIN_LETTERS.oferta),
     };
     const inb = (i:number)=> i>=0 && i < headers.length;
-
-    // 3) Construir DF MIN por posición (sin depender del texto de cabecera)
     const dfm = body.map(row=>{
       const g = (i:number)=> inb(i)? row[i] : null;
       const nombre = String(g(idx.nombre) ?? "");
@@ -109,19 +104,19 @@ export function matchClientsAgainstMinisterios(
       };
     });
 
-    // 4) Matching (bloqueo CP → municipio exacto)
+    // 3) Matching (bloqueo CP → municipio; contains en ambos sentidos)
     for(const r of dfp){
-      let cand = dfm;
-      if(r._cp) cand = cand.filter(m=> m._cp === r._cp);
-      if(cand.length===0 && r._mun) cand = dfm.filter(m=> m._mun === r._mun);
+      let cand = r._cp ? dfm.filter(m=> m._cp === r._cp) : [];
+      if(cand.length===0 && r._mun){
+        cand = dfm.filter(m=> m._mun && (m._mun===r._mun || m._mun.includes(r._mun) || r._mun.includes(m._mun)));
+      }
+      if(cand.length===0){ cand = dfm.slice(0, Math.min(4000, dfm.length)); }
 
       const scored = cand.map(m=>{
-        const sName = fuzzy(r._name, m._name);
-        const sStr  = fuzzy(r._street_core, m._street_core);
-        let s = W_NAME*sName + W_STREET*sStr;
+        let s = W_NAME*fuzzy(r._name, m._name) + W_STREET*fuzzy(r._street_core, m._street_core);
         if(r._cp && r._cp===m._cp) s += BONUS_CP;
         if(r._num && m._num && String(r._num)===String(m._num)) s += BONUS_NUM;
-        if(r._mun && r._mun===m._mun) s += BONUS_MUN;
+        if(r._mun && (m._mun===r._mun || m._mun.includes(r._mun) || r._mun.includes(m._mun))) s += BONUS_MUN;
         s = Math.max(0, Math.min(1, s));
         return { sc: s, m };
       }).sort((a,b)=> b.sc-a.sc);
