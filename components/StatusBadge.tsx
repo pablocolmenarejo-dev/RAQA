@@ -1,25 +1,23 @@
+// components/StatusBadge.tsx
+import React from "react";
+import type { MatchRecord } from "@/types";
 
-import React from 'react';
-import { ValidationStatusValue } from '../types';
+type Props = { tier: MatchRecord["TIER"] };
 
-interface StatusBadgeProps {
-  status: ValidationStatusValue;
+export default function StatusBadge({ tier }: Props) {
+  const style: React.CSSProperties = {
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    ...styleByTier(tier),
+  };
+  return <span style={style}>{tier}</span>;
 }
 
-const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
-  const statusStyles: { [key in ValidationStatusValue]: string } = {
-    'Validado': 'bg-green-100 text-green-800',
-    'No Validado': 'bg-red-100 text-red-800',
-    'Pendiente de Revisión': 'bg-yellow-100 text-yellow-800',
-  };
-
-  return (
-    <span
-      className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusStyles[status]}`}
-    >
-      {status}
-    </span>
-  );
-};
-
-export default StatusBadge;
+function styleByTier(tier: MatchRecord["TIER"]): React.CSSProperties {
+  if (tier === "ALTA")    return { background: "#e8f5e9", color: "#2e7d32", border: "1px solid #c8e6c9" };
+  if (tier === "REVISAR") return { background: "#fff8e1", color: "#f57f17", border: "1px solid #ffe082" };
+  return { background: "#ffebee", color: "#c62828", border: "1px solid #ffcdd2" };
+}
