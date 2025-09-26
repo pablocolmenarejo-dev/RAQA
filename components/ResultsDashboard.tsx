@@ -1,123 +1,111 @@
-// /components/ResultsDashboard.tsx
+// components/ResultsDashboard.tsx
+import React, { useMemo } from "react";
+import type { MatchOutput, MatchRecord } from "@/types";
+import SummaryChart from "./SummaryChart";
 
-import React, { useEffect } from 'react';
-import { Client, ValidationResult, ValidationStatusValue } from '../types';
-import ClientTable from './ClientTable';
-import { generatePdfReport, generateExcelReport } from '../services/reportGeneratorService';
-import { FileDown, RotateCcw, CheckCircle, XCircle, Clock } from 'lucide-react';
+type Props = { result: MatchOutput };
 
-interface ResultsDashboardProps {
-  results: ValidationResult[];
-  clients: Client[];
-  onReset: () => void;
-  isHistoric: boolean;
-  // Nuevos props para el nombre de proyecto y usuario
-  projectName?: string;
-  username?: string;
-}
-
-const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ results, clients, onReset, isHistoric, projectName, username }) => {
-
-  useEffect(() => {
-    if (!isHistoric) {
-      try {
-        const reportId = `validation-${new Date().toISOString()}`;
-        const newReport = {
-          id: reportId,
-          date: new Date().toLocaleString(),
-          clientCount: clients.length,
-          projectName: projectName || "Untitled Project", // Guardar nombre del proyecto
-          username: username, // Guardar usuario
-          results,
-          clients,
-        };
-
-        const history = JSON.parse(localStorage.getItem('validationHistory') || '[]');
-        history.unshift(newReport);
-        
-        if (history.length > 10) {
-          history.pop();
-        }
-
-        localStorage.setItem('validationHistory', JSON.stringify(history));
-
-      } catch (error) {
-        console.error("Error guardando el historial de validación:", error);
-      }
+export default function ResultsDashboard({ result }: Props) {
+  const counters = useMemo(() => {
+    if (result?.summary) {
+      return {
+        total: result.summary.n_prueba,
+        alta: result.summary.alta,
+        revisar: result.summary.revisar,
+        sin: result.summary.sin,
+      };
     }
-  }, [results, clients, isHistoric, projectName, username]);
+    // Fallback si no hubiera summary (no debería pasar)
+    const matches = result?.matches ?? [];
+    return {
+      total: matches.length,
+      alta: matches.filter((m) => m.TIER === "ALTA").length,
+      revisar: matches.filter((m) => m.TIER === "REVISAR").length,
+      sin: matches.filter((m) => m.TIER === "SIN").length,
+    };
+  }, [result]);
 
-  const handleDownloadPdf = () => {
-    generatePdfReport();
-  };
-
-  const handleDownloadExcel = () => {
-    generateExcelReport(results, clients);
-  };
-
-  const statusCounts = results.reduce((acc, result) => {
-    acc[result.status] = (acc[result.status] || 0) + 1;
-    return acc;
-  }, {} as Record<ValidationStatusValue, number>);
-
-  const summaryItems = [
-    { title: 'Validated', count: statusCounts['Validado'] || 0, icon: CheckCircle, color: 'text-green-500' },
-    { title: 'Not Validated', count: statusCounts['No Validado'] || 0, icon: XCircle, color: 'text-red-500' },
-    { title: 'Pending Review', count: statusCounts['Pendiente de Revisión'] || 0, icon: Clock, color: 'text-yellow-500' },
-  ];
+  const topSources = useMemo(() => {
+    // ranking rápido por fuente (Excel del Ministerio)
+    const map = new Map<string, number>();
+    for (const m of result.matches) {
+      const src = (m.MIN_source ?? "Desconocida").trim() || "Desconocida";
+      map.set(src, (map.get(src) ?? 0) + 1);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [result.matches]);
 
   return (
-    <div className="space-y-6" id="report-content">
-      <div className="bg-white p-6 rounded-xl shadow-lg">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
-            <div>
-                <h2 className="text-2xl font-bold text-[#333333]">{projectName || (isHistoric ? "Historical Report" : "Validation Complete")}</h2>
-                <p className="text-gray-700 mt-1">Review the final results for the {clients.length} clients processed.</p>
-            </div>
-            <div className="flex items-center space-x-3 mt-4 md:mt-0">
-                <button
-                    onClick={onReset}
-                    className="flex items-center justify-center bg-white text-gray-700 font-semibold py-2 px-4 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors"
-                >
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    {isHistoric ? "Back to Start" : "Start New Validation"}
-                </button>
-                <button
-                    onClick={handleDownloadPdf}
-                    className="flex items-center justify-center bg-[#00338D] text-white font-semibold py-2 px-4 rounded-lg hover:brightness-90 transition-all"
-                >
-                    <FileDown className="h-4 w-4 mr-2" />
-                    Download PDF
-                </button>
-                <button
-                    onClick={handleDownloadExcel}
-                    className="flex items-center justify-center bg-[#00AEEF] text-white font-semibold py-2 px-4 rounded-lg hover:brightness-90 transition-all"
-                >
-                    <FileDown className="h-4 w-4 mr-2" />
-                    Download Excel
-                </button>
-            </div>
+    <section style={{ marginBottom: 16 }}>
+      <h2 style={{ margin: "0 0 8px 0" }}>Resumen</h2>
+
+      <div style={gridCards}>
+        <Card title="Total PRUEBA" value={counters.total} />
+        <Card title="Alta confianza" value={counters.alta} accent="ALTA" />
+        <Card title="Revisar" value={counters.revisar} accent="REVISAR" />
+        <Card title="Sin coincidencia" value={counters.sin} accent="SIN" />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginTop: 12 }}>
+        <div style={panel}>
+          <h3 style={h3}>Distribución por TIER</h3>
+          <SummaryChart alta={counters.alta} revisar={counters.revisar} sin={counters.sin} total={counters.total} />
+        </div>
+
+        <div style={panel}>
+          <h3 style={h3}>Top fuentes (Excel Ministerio)</h3>
+          {topSources.length === 0 ? (
+            <p style={{ color: "#666" }}>Sin datos de fuentes.</p>
+          ) : (
+            <ol style={{ margin: 0, paddingLeft: 18 }}>
+              {topSources.map(([src, n]) => (
+                <li key={src} style={{ marginBottom: 6 }}>
+                  <strong>{src}</strong> — {n}
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       </div>
-      
-       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {summaryItems.map(item => (
-          <div key={item.title} className="bg-white p-6 rounded-xl shadow-lg flex items-center space-x-4">
-            <item.icon className={`h-10 w-10 ${item.color}`} />
-            <div>
-              <p className="text-gray-600 text-sm">{item.title}</p>
-              <p className="text-2xl font-bold text-[#333333]">{item.count}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+    </section>
+  );
+}
 
-      <div className="bg-white p-6 rounded-xl shadow-lg">
-        <h3 className="text-lg font-semibold text-[#333333] mb-4">Detailed Client Report</h3>
-        <ClientTable results={results} clients={clients} />
-      </div>
+/* ────────── UI helpers ────────── */
+
+function Card({ title, value, accent }: { title: string; value: number; accent?: MatchRecord["TIER"] }) {
+  return (
+    <div style={{ ...card, ...(accent ? accentStyle(accent) : {}) }}>
+      <div style={{ fontSize: 12, color: "#666" }}>{title}</div>
+      <div style={{ fontSize: 22, fontWeight: 800 }}>{value}</div>
     </div>
   );
+}
+
+function accentStyle(tier: MatchRecord["TIER"]): React.CSSProperties {
+  if (tier === "ALTA")    return { borderColor: "#c8e6c9", background: "#f3fbf4" };
+  if (tier === "REVISAR") return { borderColor: "#ffe082", background: "#fff9e8" };
+  return { borderColor: "#ffcdd2", background: "#fff2f3" };
+}
+
+const gridCards: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(140px, 1fr))",
+  gap: 8,
 };
 
-export default ResultsDashboard;
+const card: React.CSSProperties = {
+  border: "1px solid #e5e5e5",
+  borderRadius: 10,
+  padding: "10px 12px",
+  background: "#fafafa",
+};
+
+const panel: React.CSSProperties = {
+  border: "1px solid #e5e5e5",
+  borderRadius: 10,
+  padding: 12,
+  background: "#fff",
+};
+
+const h3: React.CSSProperties = { margin: "0 0 8px 0" };
