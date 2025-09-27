@@ -1,152 +1,130 @@
 // src/services/reportGeneratorService.ts
 import type { MatchOutput, MatchRecord } from "@/types";
 
-// Deducción segura de XLSX desde el script del CDN
-function getXLSX(): any {
-  // @ts-ignore
-  const xlsx = (window as any)?.XLSX;
-  if (!xlsx) {
-    throw new Error(
-      'No se encontró XLSX en window. Asegúrate de tener en index.html: <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>'
-    );
-  }
-  return xlsx;
-}
+// Importar XLSX desde la dependencia instalada (npm i xlsx)
+import * as XLSX from "xlsx";
 
-// Normaliza a string el nombre de archivo para evitar "lastIndexOf is not a function"
-function normalizeFilename(name?: unknown): string {
-  const fallback = "matches.xlsx";
-  if (typeof name === "string" && name.trim()) return name.trim();
-  try {
-    return String(name || fallback);
-  } catch {
-    return fallback;
-  }
+/**
+ * Clave estable para cruzar decisiones/comentarios con los matches.
+ * Debe ser lo más única posible; alineada con la usada en ValidationWizard.
+ */
+function makeMatchKey(m: MatchRecord): string {
+  return [
+    m.PRUEBA_nombre ?? "",
+    m.PRUEBA_cp ?? "",
+    m.MIN_codigo_centro ?? "",
+    m.MIN_source ?? "",
+  ].join("|");
 }
 
 /**
- * Exporta a Excel las coincidencias.
- * Lee columnas del objeto MatchRecord y añade:
- *  - Validación (si la fila trae __decision)
- *  - Comentarios (si la fila trae __comment)
- *
- * ACEPTA:
- *  - result: MatchOutput (lo típico)
- *  - filename: nombre de archivo (cualquier cosa -> se fuerza a string)
- *
- * NOTA: si quieres que salgan Validación/Comentarios, pasa los "matches"
- * ANOTADOS (los que usas en la tabla) a esta función, o añade __decision/__comment
- * a result.matches antes de exportar.
+ * Convierte el texto interno de decisión a etiqueta para el Excel.
  */
-export function exportMatchesToExcel(
+function decisionToLabel(d?: string): string {
+  if (d === "ACCEPTED") return "ACEPTADA";
+  if (d === "REJECTED") return "RECHAZADA";
+  if (d === "STANDBY")  return "PENDIENTE";
+  return "";
+}
+
+/**
+ * Exporta TODO el resultado a un .xlsx con las columnas visibles,
+ * añadiendo “Validación” y “Comentarios”.
+ *
+ * @param result     Resultado del matching (matches/top3/summary)
+ * @param decisions  Mapa de decisiones (key -> "ACCEPTED"|"REJECTED"|"STANDBY")
+ * @param comments   Mapa de comentarios (key -> string)
+ * @param filename   Nombre del archivo a descargar (string)
+ */
+export async function exportMatchesToExcel(
   result: MatchOutput,
-  filename?: unknown
-): void {
-  try {
-    const XLSX = getXLSX();
-    const fname = normalizeFilename(filename);
+  decisions: Record<string, "ACCEPTED" | "REJECTED" | "STANDBY" | undefined>,
+  comments: Record<string, string>,
+  filename = "matches.xlsx"
+): Promise<void> {
+  const rows = result.matches ?? [];
 
-    const rows: any[] = (result?.matches ?? []).map((m: MatchRecord & {
-      __decision?: string;
-      __comment?: string;
-    }) => {
-      return {
-        // PRUEBA
-        "Customer": m.PRUEBA_customer ?? "",
-        "PRUEBA_nombre": m.PRUEBA_nombre ?? "",
-        "PRUEBA_street": m.PRUEBA_street ?? "",
-        "PRUEBA_city": m.PRUEBA_city ?? "",
-        "PRUEBA_cp": m.PRUEBA_cp ?? "",
+  // Construir filas "planas" para la hoja (una por match)
+  const data = rows.map((m) => {
+    // Prioriza anotaciones inline si existen; si no, usa los mapas
+    const key = makeMatchKey(m);
+    const dInline = (m as any).__decision as (string | undefined);
+    const cInline = (m as any).__comment as (string | undefined);
 
-        // MINISTERIO
-        "MIN_nombre": m.MIN_nombre ?? "",
-        "MIN_via": m.MIN_via ?? "",
-        "MIN_num": m.MIN_num ?? "",
-        "MIN_municipio": m.MIN_municipio ?? "",
-        "MIN_cp": m.MIN_cp ?? "",
+    const decision = dInline ?? decisions?.[key];
+    const comment  = cInline ?? comments?.[key] ?? "";
 
-        // Score y clasif
-        "SCORE": typeof m.SCORE === "number" ? Number(m.SCORE.toFixed(3)) : m.SCORE,
-        "TIER": m.TIER ?? "",
+    return {
+      // PRUEBA
+      "Customer":                m.PRUEBA_customer ?? "",
+      "PRUEBA_nombre":           m.PRUEBA_nombre ?? "",
+      "PRUEBA_street":           m.PRUEBA_street ?? "",
+      "PRUEBA_city":             m.PRUEBA_city ?? "",
+      "PRUEBA_cp":               m.PRUEBA_cp ?? "",
+      "PRUEBA_num":              m.PRUEBA_num ?? "",
 
-        // Fuente y claves
-        "Fuente": (m as any).MIN_source ?? "",
-        "Código centro (C)": (m as any).MIN_codigo_centro ?? "",
-        "Fecha última aut. (Y)": (m as any).MIN_fecha_autoriz ?? "",
-        "Oferta asistencial (AC)": (m as any).MIN_oferta_asist ?? "",
+      // MINISTERIO
+      "MIN_nombre":              m.MIN_nombre ?? "",
+      "MIN_via":                 m.MIN_via ?? "",
+      "MIN_num":                 m.MIN_num ?? "",
+      "MIN_municipio":           m.MIN_municipio ?? "",
+      "MIN_cp":                  m.MIN_cp ?? "",
+      "SCORE":                   Number(m.SCORE ?? 0),
+      "TIER":                    m.TIER ?? "",
+      "Fuente":                  m.MIN_source ?? "",
 
-        // Validación y comentarios (si existen en la fila anotada)
-        "Validación": m.__decision ?? "",
-        "Comentarios": (m as any).__comment ?? "",
-      };
-    });
+      // Claves que pediste (C/Y/AC)
+      "Código centro (C)":       m.MIN_codigo_centro ?? "",
+      "Fecha última aut. (Y)":   m.MIN_fecha_autoriz ?? "",
+      "Oferta asistencial (AC)": m.MIN_oferta_asist ?? "",
 
-    // Crea el libro y hoja
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows, { skipHeader: false });
+      // Validación y comentarios
+      "Validación":              decisionToLabel(decision),
+      "Comentarios":             comment,
+    };
+  });
 
-    // Ajuste de anchos simples (opcional)
-    const headers = Object.keys(rows[0] || {
-      "Customer": "", "PRUEBA_nombre": "", "PRUEBA_street": "", "PRUEBA_city": "", "PRUEBA_cp": "",
-      "MIN_nombre": "", "MIN_via": "", "MIN_num": "", "MIN_municipio": "", "MIN_cp": "",
-      "SCORE": "", "TIER": "",
-      "Fuente": "", "Código centro (C)": "", "Fecha última aut. (Y)": "", "Oferta asistencial (AC)": "",
-      "Validación": "", "Comentarios": "",
-    });
-    ws["!cols"] = headers.map(() => ({ wch: 22 }));
+  // Crear libro y hoja
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data, { skipHeader: false });
 
-    XLSX.utils.book_append_sheet(wb, ws, "RESULTADOS");
-    XLSX.writeFile(wb, fname); // <- necesita string, ya forzado arriba
+  // Opcional: ajustar anchuras básicas
+  const headers = Object.keys(data[0] ?? {
+    "Customer": "", "PRUEBA_nombre": "", "PRUEBA_street": "", "PRUEBA_city": "",
+    "PRUEBA_cp": "", "PRUEBA_num": "", "MIN_nombre": "", "MIN_via": "", "MIN_num": "",
+    "MIN_municipio": "", "MIN_cp": "", "SCORE": "", "TIER": "", "Fuente": "",
+    "Código centro (C)": "", "Fecha última aut. (Y)": "", "Oferta asistencial (AC)": "",
+    "Validación": "", "Comentarios": "",
+  });
 
-  } catch (err: any) {
-    console.error("[exportMatchesToExcel] Error:", err);
-    alert(err?.message || "Error exportando a Excel");
-  }
+  ws["!cols"] = headers.map((h) => {
+    // Anchura aproximada por encabezado
+    const base = Math.max(12, h.length + 2);
+    // Dar un poco más a campos largos:
+    if (["PRUEBA_nombre","MIN_nombre","Oferta asistencial (AC)","Comentarios"].includes(h)) {
+      return { wch: Math.max(base, 40) };
+    }
+    if (["PRUEBA_street","MIN_via"].includes(h)) {
+      return { wch: Math.max(base, 28) };
+    }
+    return { wch: base };
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws, "MATCHES");
+
+  // Escribir a ArrayBuffer y disparar descarga (nombre de archivo STRING)
+  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+  const a = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = typeof filename === "string" ? filename : "matches.xlsx";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 0);
 }
 
-/**
- * Variante que recibe directamente el array de filas **anotadas** (con __decision/__comment).
- * Úsala si ya tienes en memoria la tabla que pintas.
- */
-export function exportAnnotatedToExcel(
-  matches: (MatchRecord & { __decision?: string; __comment?: string })[],
-  filename?: unknown
-): void {
-  try {
-    const XLSX = getXLSX();
-    const fname = normalizeFilename(filename);
-
-    const rows = (matches ?? []).map((m) => ({
-      "Customer": m.PRUEBA_customer ?? "",
-      "PRUEBA_nombre": m.PRUEBA_nombre ?? "",
-      "PRUEBA_street": m.PRUEBA_street ?? "",
-      "PRUEBA_city": m.PRUEBA_city ?? "",
-      "PRUEBA_cp": m.PRUEBA_cp ?? "",
-      "MIN_nombre": m.MIN_nombre ?? "",
-      "MIN_via": m.MIN_via ?? "",
-      "MIN_num": m.MIN_num ?? "",
-      "MIN_municipio": m.MIN_municipio ?? "",
-      "MIN_cp": m.MIN_cp ?? "",
-      "SCORE": typeof m.SCORE === "number" ? Number(m.SCORE.toFixed(3)) : m.SCORE,
-      "TIER": m.TIER ?? "",
-      "Fuente": (m as any).MIN_source ?? "",
-      "Código centro (C)": (m as any).MIN_codigo_centro ?? "",
-      "Fecha última aut. (Y)": (m as any).MIN_fecha_autoriz ?? "",
-      "Oferta asistencial (AC)": (m as any).MIN_oferta_asist ?? "",
-      "Validación": m.__decision ?? "",
-      "Comentarios": (m as any).__comment ?? "",
-    }));
-
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows, { skipHeader: false });
-    const headers = Object.keys(rows[0] || {});
-    ws["!cols"] = headers.map(() => ({ wch: 22 }));
-
-    XLSX.utils.book_append_sheet(wb, ws, "RESULTADOS");
-    XLSX.writeFile(wb, fname);
-
-  } catch (err: any) {
-    console.error("[exportAnnotatedToExcel] Error:", err);
-    alert(err?.message || "Error exportando a Excel");
-  }
-}
