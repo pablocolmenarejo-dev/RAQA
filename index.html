@@ -2,20 +2,15 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RAQA</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>RAQA – Buscador de coincidencias</title>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module">
-      import React from "react";
-      import { createRoot } from "react-dom/client";
-      import App from "/App.tsx"; // <- App.tsx en la RAÍZ
-
-      const el = document.getElementById("root");
-      createRoot(el).render(
-        React.createElement(React.StrictMode, null, React.createElement(App))
-      );
-    </script>
+    <!-- Entrada única estándar de Vite -->
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
