@@ -7,10 +7,16 @@
       content="width=device-width, initial-scale=1.0"
     />
     <title>RAQA – Buscador de coincidencias</title>
+    <!-- (opcional) tu CSS si existe -->
+    <link rel="stylesheet" href="/index.css" />
   </head>
   <body>
     <div id="root"></div>
-    <!-- Entrada única estándar de Vite -->
+
+    <!-- ✅ AÑADIDO: XLSX desde CDN, disponible como window.XLSX -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+    <!-- Tu app (Vite) -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
