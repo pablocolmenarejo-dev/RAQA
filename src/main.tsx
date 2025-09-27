@@ -1,11 +1,7 @@
-// src/main.tsx
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App"; // ¡ojo a la A mayúscula!
+// App.tsx está en la RAÍZ del repo:
+import App from "../App";
 
 const el = document.getElementById("root")!;
-createRoot(el).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+createRoot(el).render(<App />);
