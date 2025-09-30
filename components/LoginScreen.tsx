@@ -1,10 +1,9 @@
 // /components/LoginScreen.tsx
 
 import React, { useState } from 'react';
-import { LogIn } from 'lucide-react';
+// Se ha eliminado el icono LogIn para un diseño más limpio.
 
 interface LoginScreenProps {
-  // La función ahora aceptará el nombre de usuario como argumento
   onLoginSuccess: (username: string) => void;
 }
 
@@ -20,65 +19,136 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     if (username.toLowerCase() === HARDCODED_USERNAME && password === HARDCODED_PASSWORD) {
       setError(null);
-      // Pasamos el nombre de usuario al iniciar sesión con éxito
       onLoginSuccess(username);
     } else {
       setError('Usuario o contraseña incorrectos.');
     }
   };
 
+  // Estilos en línea para reflejar la identidad de Meisys
+  const styles: { [key: string]: React.CSSProperties } = {
+    container: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '100vh',
+      backgroundColor: '#f4f7f9', // Un fondo gris muy claro
+      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif",
+    },
+    card: {
+      width: '100%',
+      maxWidth: '400px',
+      padding: '40px',
+      backgroundColor: '#ffffff',
+      borderRadius: '12px',
+      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+    },
+    header: {
+      display: 'flex',
+      flexDirection: 'column' as 'column',
+      alignItems: 'center',
+    },
+    logo: {
+      height: '48px',
+      width: 'auto',
+    },
+    title: {
+      marginTop: '16px',
+      fontSize: '24px',
+      fontWeight: 600,
+      color: '#0d2f5a', // Azul oscuro para el texto principal
+      textAlign: 'center' as 'center',
+    },
+    subtitle: {
+        color: '#5a7184', // Un gris azulado para el texto secundario
+        fontSize: '14px',
+    },
+    form: {
+      marginTop: '32px',
+      display: 'flex',
+      flexDirection: 'column' as 'column',
+      gap: '18px',
+    },
+    input: {
+      width: '100%',
+      padding: '12px 16px',
+      fontSize: '16px',
+      color: '#333333',
+      backgroundColor: '#f8f9fa',
+      border: '1px solid #dde2e7',
+      borderRadius: '8px',
+      boxSizing: 'border-box' as 'border-box',
+      transition: 'border-color 0.2s, box-shadow 0.2s',
+    },
+    button: {
+      width: '100%',
+      padding: '14px',
+      fontSize: '16px',
+      fontWeight: 600,
+      color: '#ffffff',
+      backgroundColor: '#005a9e', // Azul corporativo de Meisys
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      transition: 'background-color 0.2s',
+    },
+    error: {
+      fontSize: '14px',
+      color: '#c62828',
+      textAlign: 'center' as 'center',
+      marginTop: '16px',
+    },
+  };
+
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50">
-      <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-xl shadow-lg">
-        <div className="flex flex-col items-center">
-            <img src="/meisys-logo.webp" alt="Meisys Logo" className="h-12 w-auto" />
-            <h1 className="mt-4 text-2xl font-bold text-center text-[#333333]">
+    <div style={styles.container}>
+      <div style={styles.card}>
+        <div style={styles.header}>
+            <img src="/meisys-logo.webp" alt="Meisys Logo" style={styles.logo} />
+            <h1 style={styles.title}>
                 Meisys Client Validator
             </h1>
-          <p className="text-sm text-gray-600">Por favor, inicia sesión para continuar</p>
+          <p style={styles.subtitle}>Por favor, inicia sesión para continuar</p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-          <div className="space-y-4 rounded-md shadow-sm">
-            <div>
-              <label htmlFor="username" className="sr-only">Usuario</label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                required
-                autoComplete="username"
-                className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] focus:z-10 sm:text-sm"
-                placeholder="Usuario"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">Contraseña</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                autoComplete="current-password"
-                className="relative block w-full px-3 py-2 text-gray-900 placeholder-gray-500 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00AEEF] focus:border-[#00AEEF] focus:z-10 sm:text-sm"
-                placeholder="Contraseña"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+        <form style={styles.form} onSubmit={handleLogin}>
+          <div>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              required
+              autoComplete="username"
+              style={styles.input}
+              placeholder="Usuario"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </div>
+          <div>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              autoComplete="current-password"
+              style={styles.input}
+              placeholder="Contraseña"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
           </div>
 
           {error && (
-            <p className="text-sm text-center text-red-600">{error}</p>
+            <p style={styles.error}>{error}</p>
           )}
 
           <div>
             <button
               type="submit"
-              className="relative flex justify-center w-full px-4 py-2 text-sm font-medium text-white bg-[#00338D] border border-transparent rounded-md group hover:brightness-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00AEEF]"
+              style={styles.button}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#004a8d'}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#005a9e'}
             >
-              <LogIn className="w-5 h-5 mr-2" />
               Acceder
             </button>
           </div>
