@@ -6,6 +6,13 @@ import type { MatchOutput } from "@/types";
 
 interface Props { onResult: (r: MatchOutput) => void; }
 
+// Componente para inyectar las fuentes de Google en el head del documento
+const GoogleFonts = () => (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Lora:wght@600&family=Lato:wght@400;700&display=swap');
+  `}</style>
+);
+
 export default function DatabaseUploadScreen({ onResult }: Props) {
   const [pruebaFile, setPruebaFile] = useState<File | null>(null);
   const [minFiles, setMinFiles] = useState<FileList | null>(null);
@@ -32,15 +39,16 @@ export default function DatabaseUploadScreen({ onResult }: Props) {
 
   // Estilos en línea para reflejar la identidad de Meisys
   const styles: { [key: string]: React.CSSProperties } = {
+    // Se asume un fondo claro en el body global, aquí definimos la tarjeta principal
     card: {
       maxWidth: '700px',
       margin: '40px auto',
-      padding: '32px 40px',
+      padding: '40px',
       backgroundColor: '#ffffff',
       borderRadius: '12px',
-      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.08)',
-      border: '1px solid #e6e9ec',
-      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      boxShadow: '0 10px 30px rgba(0, 47, 94, 0.08)',
+      border: '1px solid #e9eef2',
+      fontFamily: "'Lato', sans-serif", // Fuente Sans-serif para el cuerpo
     },
     header: {
       textAlign: 'center' as 'center',
@@ -52,16 +60,16 @@ export default function DatabaseUploadScreen({ onResult }: Props) {
         marginBottom: '24px',
     },
     title: {
-      fontSize: '28px',
+      fontFamily: "'Lora', serif", // Fuente Serif para el titular principal
+      fontSize: '32px',
       fontWeight: 600,
-      color: '#0d2f5a',
-      margin: 0,
+      color: '#0d2f5a', // Azul oscuro corporativo
+      margin: '0 0 12px 0',
     },
     subtitle: {
-      marginTop: '8px',
       fontSize: '16px',
-      color: '#5a7184',
-      lineHeight: 1.5,
+      color: '#5a7184', // Gris azulado para texto secundario
+      lineHeight: 1.6,
     },
     uploadArea: {
       marginBottom: '28px',
@@ -69,7 +77,7 @@ export default function DatabaseUploadScreen({ onResult }: Props) {
     label: {
       display: 'block',
       fontSize: '14px',
-      fontWeight: 600,
+      fontWeight: 700, // Bold para más claridad
       color: '#334e68',
       marginBottom: '12px',
     },
@@ -81,6 +89,7 @@ export default function DatabaseUploadScreen({ onResult }: Props) {
         padding: '12px',
         borderRadius: '8px',
         backgroundColor: '#f8f9fa',
+        transition: 'border-color 0.2s',
     },
     fileInput: {
         fontFamily: 'inherit',
@@ -92,66 +101,72 @@ export default function DatabaseUploadScreen({ onResult }: Props) {
         fontWeight: 500,
         fontStyle: 'italic' as 'italic',
         fontSize: '14px',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
     },
     button: {
       width: '100%',
-      padding: '14px',
+      padding: '15px',
       fontSize: '16px',
-      fontWeight: 600,
+      fontWeight: 700, // Botón más prominente
       color: '#ffffff',
-      backgroundColor: busy ? '#b0c4de' : '#005a9e',
+      backgroundColor: busy ? '#b0c4de' : '#005a9e', // Azul corporativo de Meisys
       border: 'none',
       borderRadius: '8px',
       cursor: busy ? 'not-allowed' : 'pointer',
       transition: 'background-color 0.2s, box-shadow 0.2s',
       marginTop: '16px',
       boxShadow: '0 4px 12px rgba(0, 90, 158, 0.2)',
+      fontFamily: "'Lato', sans-serif",
     },
   };
 
   return (
-    <div style={styles.card}>
-      <header style={styles.header}>
-        <img src="/meisys-logo.webp" alt="Meisys Logo" style={styles.logo} />
-        <h1 style={styles.title}>RAQA – Buscador de coincidencias</h1>
-        <p style={styles.subtitle}>
-          Sube tu fichero <strong>PRUEBA.xlsx</strong> y hasta <strong>4 Excel</strong> del Ministerio.
-          Calcularemos coincidencias con la metodología determinista (sin IA).
-        </p>
-      </header>
+    <>
+      <GoogleFonts />
+      <div style={styles.card}>
+        <header style={styles.header}>
+          <img src="/meisys-logo.webp" alt="Meisys Logo" style={styles.logo} />
+          <h1 style={styles.title}>Más allá de la consultoría científica</h1>
+          <p style={styles.subtitle}>
+            Sube tu fichero <strong>PRUEBA</strong> y los ficheros del <strong>Ministerio</strong> para iniciar la validación de datos.
+          </p>
+        </header>
 
-      <div style={styles.uploadArea}>
-        <label htmlFor="prueba-upload" style={styles.label}>1. Fichero de Clientes (PRUEBA)</label>
-        <div style={styles.fileInputContainer}>
-          <input
-            id="prueba-upload"
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={(e) => setPruebaFile(e.target.files?.[0] ?? null)}
-            style={styles.fileInput}
-          />
-          {pruebaFile && <span style={styles.fileName}>{pruebaFile.name}</span>}
+        <div style={styles.uploadArea}>
+          <label htmlFor="prueba-upload" style={styles.label}>1. Fichero de Clientes (PRUEBA)</label>
+          <div style={styles.fileInputContainer}>
+            <input
+              id="prueba-upload"
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(e) => setPruebaFile(e.target.files?.[0] ?? null)}
+              style={styles.fileInput}
+            />
+            {pruebaFile && <span style={styles.fileName}>{pruebaFile.name}</span>}
+          </div>
         </div>
-      </div>
 
-      <div style={styles.uploadArea}>
-        <label htmlFor="ministerio-upload" style={styles.label}>2. Ficheros del Ministerio (hasta 4)</label>
-        <div style={styles.fileInputContainer}>
-          <input
-            id="ministerio-upload"
-            type="file"
-            accept=".xlsx,.xls"
-            multiple
-            onChange={(e) => setMinFiles(e.target.files)}
-            style={styles.fileInput}
-          />
-          {minFiles && minFiles.length > 0 && <span style={styles.fileName}>{minFiles.length} archivo(s) seleccionado(s)</span>}
+        <div style={styles.uploadArea}>
+          <label htmlFor="ministerio-upload" style={styles.label}>2. Ficheros del Ministerio (hasta 4)</label>
+          <div style={styles.fileInputContainer}>
+            <input
+              id="ministerio-upload"
+              type="file"
+              accept=".xlsx,.xls"
+              multiple
+              onChange={(e) => setMinFiles(e.target.files)}
+              style={styles.fileInput}
+            />
+            {minFiles && minFiles.length > 0 && <span style={styles.fileName}>{minFiles.length} archivo(s) seleccionado(s)</span>}
+          </div>
         </div>
-      </div>
 
-      <button onClick={handleRun} disabled={busy} style={styles.button}>
-        {busy ? "Procesando, por favor espera..." : "Calcular coincidencias"}
-      </button>
-    </div>
+        <button onClick={handleRun} disabled={busy} style={styles.button}>
+          {busy ? "Procesando, por favor espera..." : "CONÓCENOS"}
+        </button>
+      </div>
+    </>
   );
 }
