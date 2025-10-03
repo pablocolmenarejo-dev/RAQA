@@ -4,8 +4,7 @@ import DatabaseUploadScreen from "@/components/DatabaseUploadScreen";
 import ResultsDashboard from "@/components/ResultsDashboard";
 import ClientTable from "@/components/ClientTable";
 import ValidationWizard, { Decision, DecisionMap, makeMatchKey } from "@/components/ValidationWizard";
-// ⬇️ Usamos el exportador que espera los datos anotados con __decision y __comment
-import { exportAnnotatedToExcel } from "@/services/reportGeneratorService";
+import { exportMatchesToExcel } from "@/services/reportGeneratorService";
 import type { MatchOutput, MatchRecord } from "@/types";
 
 const LS_KEY_DECISIONS = "raqa:decisions:v1";
@@ -85,7 +84,17 @@ export default function App() {
     setComments((prev) => ({ ...prev, [key]: text }));
   };
 
-  // Data anotada (para la tabla y export)
+  const handleExport = async () => {
+    if (!result) return;
+    try {
+      await exportMatchesToExcel(result, decisions, comments, "matches.xlsx");
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || "No se pudo exportar el Excel. Revisa la consola.");
+    }
+  };
+
+  // Data anotada (para la tabla)
   const annotated = useMemo(() => {
     const arr = result?.matches ?? [];
     return arr.map((m) => ({
@@ -94,17 +103,6 @@ export default function App() {
       __comment:  comments[makeMatchKey(m)] ?? "",
     }));
   }, [result?.matches, decisions, comments]);
-
-  // Exportar Excel usando el array anotado
-  const handleExport = async () => {
-    if (!result) return;
-    try {
-      await exportAnnotatedToExcel(annotated, "matches.xlsx");
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.message || "No se pudo exportar el Excel. Revisa la consola.");
-    }
-  };
 
   // Filtrado para el Wizard
   const matchesForWizard = useMemo(() => {
