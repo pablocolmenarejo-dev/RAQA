@@ -1,6 +1,8 @@
 // src/components/ResultsDashboard.tsx
 import React, { useMemo } from "react";
+// Ensure MatchRecord is imported if needed for type checks (though it's implicitly used via MatchOutput)
 import type { MatchOutput, MatchRecord } from "@/types";
+// Import Decision type
 import type { DecisionMap, Decision } from "@/components/ValidationWizard";
 import { makeMatchKey } from "@/components/ValidationWizard";
 
@@ -77,24 +79,23 @@ function Donut({
 }
 // --- Fin Componente Donut ---
 
-// --- ✅ ELIMINADO ---
-// const GoogleFonts = () => ( <style>{`@import url('https://fonts.googleapis.com/css2?family=Lora:wght@600&family=Lato:wght@400;700&display=swap');`}</style> );
-// --- FIN ELIMINADO ---
-
 export default function ResultsDashboard({ result, decisions = {}, onOpenValidation, onOpenValidationStatus }: Props) {
 
   const counts = useMemo(() => {
-    // ... (lógica de 'counts' sin cambios) ...
+    // Ensure result and result.matches are valid before proceeding
     const rows = result?.matches ?? [];
     let acc = 0, rej = 0, stb = 0;
     let pendingAlta = 0, pendingRevisar = 0, pendingSin = 0;
+
     for (const m of rows) {
+        // Basic check if 'm' looks like a MatchRecord (has TIER)
         if (typeof m !== 'object' || m === null || typeof m.TIER === 'undefined') {
           console.warn("Skipping invalid item in result.matches:", m);
-          continue; 
+          continue; // Skip potentially invalid data
         }
       const key = makeMatchKey(m);
       const decision = decisions[key];
+
       if (decision === "ACCEPTED") { acc++; }
       else if (decision === "REJECTED") { rej++; }
       else if (decision === "STANDBY") {
@@ -102,19 +103,22 @@ export default function ResultsDashboard({ result, decisions = {}, onOpenValidat
         if (m.TIER === 'ALTA') pendingAlta++;
         else if (m.TIER === 'REVISAR') pendingRevisar++;
         else if (m.TIER === 'SIN') pendingSin++;
-      } else { 
+      } else { // Undefined decision
         if (m.TIER === 'ALTA') pendingAlta++;
         else if (m.TIER === 'REVISAR') pendingRevisar++;
         else if (m.TIER === 'SIN') pendingSin++;
       }
     }
+
     const totalPendingInbox = pendingAlta + pendingRevisar + pendingSin;
+    // Calculate actualPending safely
     const actualPending = Math.max(0, totalPendingInbox - stb);
     const completed = acc + rej;
+
     return { acc, rej, stb, pendingAlta, pendingRevisar, pendingSin, actualPending, totalPendingInbox, completed };
   }, [result, decisions]);
 
-  // --- Objeto de Estilos Completo (sin cambios) ---
+  // --- Objeto de Estilos Completo ---
   const styles: { [key: string]: React.CSSProperties } = {
     // Usamos las variables CSS de index.css
     dashboardContainer: { fontFamily: "var(--font-sans)", marginBottom: '24px' },
@@ -134,8 +138,15 @@ export default function ResultsDashboard({ result, decisions = {}, onOpenValidat
     valueStandby: { color: COLORS.standby },
     valueRejected: { color: COLORS.rejected },
     valueCompleted: { color: 'var(--meisys-blue)' },
-    // Aplicamos la clase de botón
-    validationButton: { ...styles.validationButton, width: 'calc(100% - 40px)', marginTop: '16px', },
+    
+    // --- ✅ INICIO DE LA CORRECCIÓN ---
+    // Esta es la definición correcta.
+    // Solo define los estilos ADICIONALES que no están en .btn-primary
+    validationButton: { 
+      width: 'calc(100% - 40px)', 
+      marginTop: '16px', 
+    },
+    // --- ✅ FIN DE LA CORRECCIÓN ---
    };
   // --- Fin Objeto de Estilos ---
 
@@ -149,7 +160,6 @@ export default function ResultsDashboard({ result, decisions = {}, onOpenValidat
 
   return (
     <>
-      {/* --- ✅ ELIMINADO GoogleFonts --- */}
       <div style={styles.dashboardContainer}>
         {/* Sección Superior: Pendientes */}
         <section style={styles.sectionTop}>
@@ -172,7 +182,16 @@ export default function ResultsDashboard({ result, decisions = {}, onOpenValidat
             <div style={styles.chartContainer}>
                  <div style={styles.chartTitle}>Distribución Validación</div>
                  <Donut accepted={counts.acc} standby={counts.stb} rejected={counts.rej} pending={counts.actualPending} />
-                 <button onClick={() => onOpenValidation?.()} className="btn btn-primary" style={styles.validationButton}> 
+                 
+                 {/* Este botón ahora usa la clase 'btn btn-primary' (del css) 
+                   Y el 'style' (del objeto de estilos) para el width/marginTop.
+                   Esto es correcto y ya no se romperá.
+                 */}
+                 <button 
+                   onClick={() => onOpenValidation?.()} 
+                   className="btn btn-primary" 
+                   style={styles.validationButton}
+                 > 
                    Ir a Validación ({counts.totalPendingInbox}) 
                  </button>
             </div>
