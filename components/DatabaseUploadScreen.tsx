@@ -19,12 +19,14 @@ interface Props {
     projectName: string;
     userName: string;
   }) => Promise<void>; // Lo hacemos asíncrono para manejar 'busy'
+  onDeleteProject: (id: string) => void; // <-- AÑADIR ESTA LÍNEA
 }
 
 export default function DatabaseUploadScreen({
   projects,
   onLoadProject,
   onRunNewProject,
+  onDeleteProject, // <-- AÑADIR ESTA LÍNEA
 }: Props) {
   const [pruebaFile, setPruebaFile] = useState<File | null>(null);
   const [minFiles, setMinFiles] = useState<FileList | null>(null);
@@ -250,7 +252,11 @@ export default function DatabaseUploadScreen({
       </div>
       
       {/* 2. Lista de Proyectos Existentes */}
-      <ProjectList projects={projects} onLoadProject={onLoadProject} />
+      <ProjectList
+        projects={projects}
+        onLoadProject={onLoadProject}
+        onDeleteProject={onDeleteProject} // <-- Pasar la nueva prop
+      />
     </>
   );
 }
