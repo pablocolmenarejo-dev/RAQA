@@ -118,6 +118,38 @@ export default function App() {
     setCurrentData(newData);
   };
 
+  // --- NUEVA FUNCIÓN ---
+  /**
+   * Elimina un proyecto (con confirmación).
+   */
+  const handleDeleteProject = (id: string) => {
+    // 1. Pedir confirmación
+    const project = projects.find(p => p.id === id);
+    const projectName = project?.projectName || "este proyecto";
+    
+    if (!window.confirm(`¿Seguro que quieres eliminar el proyecto "${projectName}"? Esta acción no se puede deshacer.`)) {
+      return; // Usuario canceló
+    }
+
+    try {
+      // 2. Filtrar la lista de metadatos
+      const updatedProjects = projects.filter(p => p.id !== id);
+
+      // 3. Actualizar el estado (esto repintará la lista)
+      setProjects(updatedProjects);
+
+      // 4. Actualizar localStorage (ambas claves)
+      localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(updatedProjects));
+      localStorage.removeItem(LS_KEY_DATA_PREFIX + id);
+
+    } catch (e) {
+      console.error("Error al eliminar el proyecto:", e);
+      alert("No se pudo eliminar el proyecto.");
+    }
+  };
+  // --- FIN NUEVA FUNCIÓN ---
+
+
   /**
    * Vuelve a la pantalla de carga (resetea el estado)
    */
@@ -216,6 +248,7 @@ export default function App() {
           projects={projects}
           onLoadProject={loadProject}
           onRunNewProject={handleCreateProject}
+          onDeleteProject={handleDeleteProject} // <-- Pasar la nueva prop
         />
       </div>
     );
