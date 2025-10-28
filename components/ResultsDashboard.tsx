@@ -1,8 +1,6 @@
 // src/components/ResultsDashboard.tsx
 import React, { useMemo } from "react";
-// Ensure MatchRecord is imported if needed for type checks (though it's implicitly used via MatchOutput)
 import type { MatchOutput, MatchRecord } from "@/types";
-// Import Decision type
 import type { DecisionMap, Decision } from "@/components/ValidationWizard";
 import { makeMatchKey } from "@/components/ValidationWizard";
 
@@ -79,25 +77,24 @@ function Donut({
 }
 // --- Fin Componente Donut ---
 
-const GoogleFonts = () => ( <style>{`@import url('https://fonts.googleapis.com/css2?family=Lora:wght@600&family=Lato:wght@400;700&display=swap');`}</style> );
+// --- ✅ ELIMINADO ---
+// const GoogleFonts = () => ( <style>{`@import url('https://fonts.googleapis.com/css2?family=Lora:wght@600&family=Lato:wght@400;700&display=swap');`}</style> );
+// --- FIN ELIMINADO ---
 
 export default function ResultsDashboard({ result, decisions = {}, onOpenValidation, onOpenValidationStatus }: Props) {
 
   const counts = useMemo(() => {
-    // Ensure result and result.matches are valid before proceeding
+    // ... (lógica de 'counts' sin cambios) ...
     const rows = result?.matches ?? [];
     let acc = 0, rej = 0, stb = 0;
     let pendingAlta = 0, pendingRevisar = 0, pendingSin = 0;
-
     for (const m of rows) {
-        // Basic check if 'm' looks like a MatchRecord (has TIER)
         if (typeof m !== 'object' || m === null || typeof m.TIER === 'undefined') {
           console.warn("Skipping invalid item in result.matches:", m);
-          continue; // Skip potentially invalid data
+          continue; 
         }
       const key = makeMatchKey(m);
       const decision = decisions[key];
-
       if (decision === "ACCEPTED") { acc++; }
       else if (decision === "REJECTED") { rej++; }
       else if (decision === "STANDBY") {
@@ -105,55 +102,54 @@ export default function ResultsDashboard({ result, decisions = {}, onOpenValidat
         if (m.TIER === 'ALTA') pendingAlta++;
         else if (m.TIER === 'REVISAR') pendingRevisar++;
         else if (m.TIER === 'SIN') pendingSin++;
-      } else { // Undefined decision
+      } else { 
         if (m.TIER === 'ALTA') pendingAlta++;
         else if (m.TIER === 'REVISAR') pendingRevisar++;
         else if (m.TIER === 'SIN') pendingSin++;
       }
     }
-
     const totalPendingInbox = pendingAlta + pendingRevisar + pendingSin;
-    // Calculate actualPending safely
     const actualPending = Math.max(0, totalPendingInbox - stb);
     const completed = acc + rej;
-
     return { acc, rej, stb, pendingAlta, pendingRevisar, pendingSin, actualPending, totalPendingInbox, completed };
   }, [result, decisions]);
 
-  // --- Objeto de Estilos Completo ---
+  // --- Objeto de Estilos Completo (sin cambios) ---
   const styles: { [key: string]: React.CSSProperties } = {
-    dashboardContainer: { fontFamily: "'Lato', sans-serif", marginBottom: '24px' },
-    sectionTop: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: '16px', marginBottom: '24px' },
-    sectionBottom: { display: "grid", gridTemplateColumns: "1.5fr repeat(4, 1fr)", gap: '16px', alignItems: 'stretch' },
-    card: { backgroundColor: '#ffffff', borderRadius: '12px', padding: '16px', boxShadow: '0 8px 25px rgba(0, 47, 94, 0.07)', border: '1px solid #e9eef2', display: 'flex', flexDirection: 'column', gap: '6px' },
+    // Usamos las variables CSS de index.css
+    dashboardContainer: { fontFamily: "var(--font-sans)", marginBottom: '24px' },
+    sectionTop: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: '20px', marginBottom: '20px' },
+    sectionBottom: { display: "grid", gridTemplateColumns: "1.5fr repeat(4, 1fr)", gap: '20px', alignItems: 'stretch', },
+    card: { backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', boxShadow: 'var(--meisys-card-shadow)', border: '1px solid var(--meisys-border)', display: 'flex', flexDirection: 'column', gap: '6px' },
     cardClickable: { cursor: 'pointer', transition: 'transform 0.2s ease, box-shadow 0.2s ease' },
-    cardTopLabel: { fontSize: '13px', color: '#5a7184', fontWeight: 400 },
-    cardTopValue: { fontSize: '24px', fontWeight: 700, color: '#0d2f5a', lineHeight: 1.2 },
+    cardTopLabel: { fontSize: '13px', color: 'var(--meisys-text-secondary)', fontWeight: 400, textTransform: 'uppercase', letterSpacing: '0.5px' },
+    cardTopValue: { fontSize: '28px', fontWeight: 700, color: 'var(--meisys-title)', lineHeight: 1.2 },
     pill: { display: 'inline-block', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, marginTop: 'auto', alignSelf: 'flex-start' },
-    chartContainer: { backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', boxShadow: '0 8px 25px rgba(0, 47, 94, 0.07)', border: '1px solid #e9eef2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' },
-    chartTitle: { fontSize: '14px', fontWeight: 700, color: '#0d2f5a', marginBottom: '12px', textAlign: 'center' as 'center' },
+    chartContainer: { backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', boxShadow: 'var(--meisys-card-shadow)', border: '1px solid var(--meisys-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+    chartTitle: { fontSize: '14px', fontWeight: 700, color: 'var(--meisys-title)', marginBottom: '12px', textAlign: 'center' as 'center', textTransform: 'uppercase', letterSpacing: '0.5px' },
     cardValidation: { padding: '20px', alignItems: 'center', textAlign: 'center' as 'center' },
-    cardValidationLabel: { fontSize: '14px', color: '#5a7184', fontWeight: 700, marginBottom: '4px' },
-    cardValidationValue: { fontSize: '32px', fontWeight: 700, lineHeight: 1.1, marginBottom: '8px' },
+    cardValidationLabel: { fontSize: '14px', color: 'var(--meisys-text-secondary)', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' },
+    cardValidationValue: { fontSize: '32px', fontWeight: 700, lineHeight: 1.1, marginBottom: '8px', fontFamily: 'var(--font-serif)' },
     valueAccepted: { color: COLORS.accepted },
     valueStandby: { color: COLORS.standby },
     valueRejected: { color: COLORS.rejected },
-    valueCompleted: { color: '#005a9e' },
-    validationButton: { width: 'calc(100% - 40px)', padding: '10px', fontSize: '13px', fontWeight: 700, color: '#ffffff', backgroundColor: '#005a9e', border: 'none', borderRadius: '8px', cursor: 'pointer', transition: 'background-color 0.2s, box-shadow 0.2s', marginTop: '16px', boxShadow: '0 4px 10px rgba(0, 90, 158, 0.15)', },
+    valueCompleted: { color: 'var(--meisys-blue)' },
+    // Aplicamos la clase de botón
+    validationButton: { ...styles.validationButton, width: 'calc(100% - 40px)', marginTop: '16px', },
    };
   // --- Fin Objeto de Estilos ---
 
   const pillColors = { ALTA: { background: "#e8f5e9", color: "#2e7d32" }, REVISAR: { background: "#fff8e1", color: "#f57f17" }, SIN: { background: "#ffebee", color: "#c62828" }, };
   const addHoverEffect = (e: React.MouseEvent<HTMLDivElement>) => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 12px 25px rgba(0, 47, 94, 0.1)"; };
-  const removeHoverEffect = (e: React.MouseEvent<HTMLDivElement>) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 8px 25px rgba(0, 47, 94, 0.07)"; };
+  const removeHoverEffect = (e: React.MouseEvent<HTMLDivElement>) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "var(--meisys-card-shadow)"; };
 
   if (!result) {
-     return <div style={{padding: '20px', textAlign: 'center', color: '#5a7184'}}>Cargando datos del dashboard...</div>;
+     return <div style={{padding: '20px', textAlign: 'center', color: 'var(--meisys-text-secondary)'}}>Cargando datos del dashboard...</div>;
   }
 
   return (
     <>
-      <GoogleFonts />
+      {/* --- ✅ ELIMINADO GoogleFonts --- */}
       <div style={styles.dashboardContainer}>
         {/* Sección Superior: Pendientes */}
         <section style={styles.sectionTop}>
@@ -176,7 +172,9 @@ export default function ResultsDashboard({ result, decisions = {}, onOpenValidat
             <div style={styles.chartContainer}>
                  <div style={styles.chartTitle}>Distribución Validación</div>
                  <Donut accepted={counts.acc} standby={counts.stb} rejected={counts.rej} pending={counts.actualPending} />
-                 <button onClick={() => onOpenValidation?.()} style={styles.validationButton} onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#004a8d'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#005a9e'}> Ir a Validación ({counts.totalPendingInbox}) </button>
+                 <button onClick={() => onOpenValidation?.()} className="btn btn-primary" style={styles.validationButton}> 
+                   Ir a Validación ({counts.totalPendingInbox}) 
+                 </button>
             </div>
             <div style={{ ...styles.card, ...styles.cardValidation, ...styles.cardClickable }} title="Ver Aceptadas" onClick={() => onOpenValidationStatus?.('ACCEPTED')} onMouseOver={addHoverEffect} onMouseOut={removeHoverEffect}>
                 <div style={styles.cardValidationLabel}>Aceptadas</div> <div style={{...styles.cardValidationValue, ...styles.valueAccepted}}> {counts.acc} </div>
