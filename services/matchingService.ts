@@ -83,7 +83,9 @@ const isMunicipio    = (s:string)=> s.includes("municipio");
 const isCP           = (s:string)=> (s.includes("codigo") && s.includes("postal")) || s==="cp" || s.includes("postal");
 const isNumVia       = (s:string)=> (s.includes("numero") && s.includes("via")) || s.endsWith(" nº") || s.endsWith(" n");
 const isCCN          = (s:string)=> (s.includes("codigo") && s.includes("centro") && (s.includes("regcess") || s.includes("normaliz") || s.includes("normalizado"))) || (s.includes("ccn") && s.includes("codigo"));
-const isFechaUltAut  = (s:string)=> (s.includes("fecha") && s.includes("ultima") && s.includes("autoriz")) || (s.includes("fecha") && s.includes("autoriz"));
+// ***** CORRECCIÓN APLICADA AQUÍ *****
+const isFechaUltAut  = (s:string)=> s.includes("fecha") && s.includes("ultima") && s.includes("autoriz"); // Ahora exige "ultima"
+// ***** FIN CORRECCIÓN *****
 const isOfertaAsist  = (s:string)=> s.includes("oferta") && s.includes("asist");
 
 function safeHeader(headers:any[], i:number|null){ return (i!=null && i>=0 && i<headers.length) ? String(headers[i]) : "(no encontrado)"; }
@@ -123,7 +125,7 @@ function prepareSources(ministeriosAoA: Record<string, MinisterioAoA>) {
       cp:     findHeaderIndex(headers, MIN_LETTERS.cp,     [isCP]),
       num:    findHeaderIndex(headers, MIN_LETTERS.num,    [isNumVia]),
       ccn:    findHeaderIndex(headers, MIN_LETTERS.ccn,    [isCCN]),
-      fecha:  findHeaderIndex(headers, MIN_LETTERS.fecha,  [isFechaUltAut]),
+      fecha:  findHeaderIndex(headers, MIN_LETTERS.fecha,  [isFechaUltAut]), // Usará la versión corregida
       oferta: findHeaderIndex(headers, MIN_LETTERS.oferta, [isOfertaAsist]),
     };
 
@@ -133,30 +135,24 @@ function prepareSources(ministeriosAoA: Record<string, MinisterioAoA>) {
     console.info(`[matching][${source}] cp:    `, safeHeader(headers, idx.cp));
     console.info(`[matching][${source}] num:   `, safeHeader(headers, idx.num));
     console.info(`[matching][${source}] CCN:   `, safeHeader(headers, idx.ccn));
-    console.info(`[matching][${source}] fecha: `, safeHeader(headers, idx.fecha));
+    console.info(`[matching][${source}] fecha: `, safeHeader(headers, idx.fecha)); // Log mostrará la cabecera correcta ahora
     console.info(`[matching][${source}] oferta:`, safeHeader(headers, idx.oferta));
 
     const inb = (i:number|null)=> i!=null && i>=0 && i < headers.length;
 
-    // --- INICIO DE MODIFICACIÓN (FILTRO U.83 FARMACIA) ---
-    // 3) Filtrar el 'body' ANTES de mapear.
-    //    Solo queremos filas que contengan "U.83 Farmacia" en la columna de Oferta Asistencial.
+    // --- Filtro U.83 Farmacia (sin cambios) ---
     const bodyFiltered = body.filter(row => {
       if (idx.oferta === null || !inb(idx.oferta)) {
-        // Si no se encontró la columna 'oferta', no podemos validar. Descartamos la fila.
         return false;
       }
       const ofertaVal = row[idx.oferta as number];
-      // Comprobamos que el string "U.83 Farmacia" exista.
       return String(ofertaVal ?? "").includes("U.83 Farmacia");
     });
-
-    // Opcional: Log de filas descartadas
     const discardedCount = body.length - bodyFiltered.length;
     if (discardedCount > 0) {
       console.info(`[matching][${source}] Descartadas ${discardedCount} de ${body.length} filas por no tener "U.83 Farmacia" en columna ${safeHeader(headers, idx.oferta)}.`);
     }
-    // --- FIN DE MODIFICACIÓN ---
+    // --- Fin Filtro U.83 ---
 
     // 3b) dfm normalizado (mapeando solo las filas filtradas)
     const dfm = bodyFiltered.map(row=>{
@@ -178,7 +174,7 @@ function prepareSources(ministeriosAoA: Record<string, MinisterioAoA>) {
         _viaRaw: g(idx.via),
         _munRaw: g(idx.mun),
         _ccn: g(idx.ccn),
-        _fecha: g(idx.fecha),
+        _fecha: g(idx.fecha), // Se mapeará el valor correcto de la columna Y
         _oferta: g(idx.oferta),
       };
     });
@@ -196,20 +192,12 @@ export function matchClientsAgainstMinisterios(
   // PRUEBA → derivados
   if(!pruebaRows || pruebaRows.length===0) throw new Error("PRUEBA está vacío.");
   
-  // ***** MODIFICACIÓN SUGERIDA: Comprobar columnas requeridas de PRUEBA *****
-  // El código original buscaba "PostalCode", pero en "constants.ts" no aparece.
-  // "constants.ts" define REQUIRED_COLUMNS: ["STREET", "CITY"]
-  // y OPTIONAL_COLUMNS: ["Customer", "INFO_1", "INFO_2", "CIF_NIF"]
-  // El matching usa "INFO_1", "STREET", "CITY", y también "PostalCode".
-  // Vamos a asumir que las columnas que el *matching* necesita son las importantes.
-  const need = ["STREET", "CITY", "INFO_1", "PostalCode"]; // Columnas que el matching usa
+  const need = ["STREET", "CITY", "INFO_1", "PostalCode"]; 
   const cols = new Set(Object.keys(pruebaRows[0]||{}));
   const missing = need.filter(n => !cols.has(n));
   if(missing.length > 0) {
     throw new Error(`En PRUEBA falta(n) columna(s) necesaria(s) para el matching: ${missing.join(", ")}. Columnas encontradas: ${Array.from(cols).join(", ")}`);
   }
-  // **************************************************************************
-
 
   const dfp = pruebaRows.map((r)=> {
     const name = [r["INFO_1"]||"", r["INFO_2"]||"", r["INFO_3"]||""].join(" ").trim();
@@ -226,29 +214,23 @@ export function matchClientsAgainstMinisterios(
     };
   });
 
-  // Preprocesar todas las fuentes una sola vez (esto ahora incluye el filtro U.83)
+  // Preprocesar todas las fuentes una sola vez (esto ahora incluye el filtro U.83 y la corrección de fecha)
   const sources = prepareSources(ministeriosAoA);
 
   const allMatches: MatchRecord[] = [];
   const allTop3: TopCandidate[] = [];
 
-  // === NUEVO: 1 fila por cliente PRUEBA (mejor global entre todas las fuentes) ===
   for (const r of dfp) {
     const scoredGlobal: Array<{ sc:number; src:string; m:any }> = [];
 
     for (const { source, dfm } of sources) {
-      // Si el dfm está vacío (porque todo fue filtrado por U.83), saltamos
       if (dfm.length === 0) continue;
 
-      // 1) CP exacto
       let cand = r._cp ? dfm.filter(m=> m._cp === r._cp) : [];
-      // 2) municipio (contains en ambos sentidos)
       if(cand.length===0 && r._mun){
         cand = dfm.filter(m=> m._mun && (m._mun===r._mun || m._mun.includes(r._mun) || r._mun.includes(m._mun)));
       }
-      // 3) capado sin bloqueo (¡esto es lo que faltaba!)
-      // Si no hay candidatos por CP/Mun, usamos el DFM completo (ya filtrado por U.83)
-      if(cand.length===0){ cand = dfm; } // Ya no necesitamos slice, el dfm es más pequeño
+      if(cand.length===0){ cand = dfm; } 
 
       for (const m of cand) {
         let s = W_NAME*fuzzy(r._name, m._name) + W_STREET*fuzzy(r._street_core, m._street_core);
@@ -280,7 +262,7 @@ export function matchClientsAgainstMinisterios(
         MIN_cp: best.m._cp || null,
 
         MIN_codigo_centro: best.m._ccn ? String(best.m._ccn) : null,
-        MIN_fecha_autoriz: best.m._fecha ? String(best.m._fecha) : null,
+        MIN_fecha_autoriz: best.m._fecha ? String(best.m._fecha) : null, // Ahora contendrá el valor correcto de la columna Y
         MIN_oferta_asist: best.m._oferta ? String(best.m._oferta) : null,
         MIN_source: best.src,
 
@@ -304,7 +286,7 @@ export function matchClientsAgainstMinisterios(
           CAND_MIN_mun: c.m._munRaw ? String(c.m._munRaw) : null,
           CAND_MIN_cp: c.m._cp || null,
           CAND_MIN_codigo_centro: c.m._ccn ? String(c.m._ccn) : null,
-          CAND_MIN_fecha_autoriz: c.m._fecha ? String(c.m._fecha) : null,
+          CAND_MIN_fecha_autoriz: c.m._fecha ? String(c.m._fecha) : null, // También aquí
           CAND_MIN_oferta_asist: c.m._oferta ? String(c.m._oferta) : null,
           CAND_MIN_source: c.src,
         });
