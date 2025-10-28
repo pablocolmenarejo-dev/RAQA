@@ -19,19 +19,22 @@ interface Props {
     projectName: string;
     userName: string;
   }) => Promise<void>; // Lo hacemos asíncrono para manejar 'busy'
-  onDeleteProject: (id: string) => void; // <-- AÑADIR ESTA LÍNEA
+  onDeleteProject: (id: string) => void;
+  loggedInUserName: string; // <-- AÑADIDO: Recibir el nombre de usuario
 }
 
 export default function DatabaseUploadScreen({
   projects,
   onLoadProject,
   onRunNewProject,
-  onDeleteProject, // <-- AÑADIR ESTA LÍNEA
+  onDeleteProject,
+  loggedInUserName, // <-- AÑADIDO
 }: Props) {
   const [pruebaFile, setPruebaFile] = useState<File | null>(null);
   const [minFiles, setMinFiles] = useState<FileList | null>(null);
   const [projectName, setProjectName] = useState("");
-  const [userName, setUserName] = useState("");
+  // <-- MODIFICADO: Inicializar el 'userName' con el prop 'loggedInUserName'
+  const [userName, setUserName] = useState(loggedInUserName);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +45,7 @@ export default function DatabaseUploadScreen({
       setError("Por favor, selecciona el fichero PRUEBA y al menos un fichero del Ministerio.");
       return;
     }
-    if (!projectName.trim() || !userName.trim()) {
+    if (!projectName.trim() || !userName.trim()) { // La validación de userName sigue siendo útil
       setError("Por favor, introduce un nombre de proyecto y un nombre de usuario.");
       return;
     }
@@ -53,7 +56,7 @@ export default function DatabaseUploadScreen({
         pruebaFile,
         minFiles,
         projectName,
-        userName,
+        userName, // Se pasará el 'userName' del estado (que vino del login)
       });
       // App.tsx se encargará de la navegación.
       // No necesitamos setBusy(false) porque el componente se desmontará.
@@ -124,6 +127,18 @@ export default function DatabaseUploadScreen({
       backgroundColor: '#f8f9fa',
       boxSizing: 'border-box' as 'border-box',
     },
+    // <-- AÑADIDO: Estilo para el campo de solo lectura
+    textInputReadOnly: { 
+      width: '100%',
+      padding: '12px',
+      fontSize: '14px',
+      fontFamily: "'Lato', sans-serif",
+      color: '#5a7184', // Color grisáceo para indicar que no es editable
+      border: '1px solid #dde2e7',
+      borderRadius: '8px',
+      backgroundColor: '#e9eef2', // Fondo ligeramente distinto
+      boxSizing: 'border-box' as 'border-box',
+    },
     fileInputContainer: {
       display: 'flex',
       alignItems: 'center',
@@ -188,7 +203,7 @@ export default function DatabaseUploadScreen({
           </p>
         </header>
 
-        {/* --- NUEVOS CAMPOS --- */}
+        {/* --- CAMPOS MODIFICADOS --- */}
         <div style={styles.inputGroup}>
           <div>
             <label htmlFor="project-name" style={styles.label}>3. Nombre del Proyecto</label>
@@ -198,7 +213,7 @@ export default function DatabaseUploadScreen({
               placeholder="Ej: Validación Q4 2025"
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
-              style={styles.textInput}
+              style={styles.textInput} // Este sigue siendo editable
             />
           </div>
           <div>
@@ -206,14 +221,14 @@ export default function DatabaseUploadScreen({
             <input
               id="user-name"
               type="text"
-              placeholder="Ej: Juan Pérez"
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              style={styles.textInput}
+              value={userName} // <-- MODIFICADO: El valor viene del estado
+              onChange={(e) => setUserName(e.target.value)} // Mantenemos el onChange por si decides no hacerlo readOnly
+              style={styles.textInputReadOnly} // <-- MODIFICADO: Estilo de solo lectura
+              readOnly // <-- AÑADIDO: Hacer el campo no editable
             />
           </div>
         </div>
-        {/* --- FIN NUEVOS CAMPOS --- */}
+        {/* --- FIN CAMPOS MODIFICADOS --- */}
 
         <div style={styles.uploadArea}>
           <label htmlFor="prueba-upload" style={styles.label}>1. Fichero de Clientes (PRUEBA)</label>
@@ -255,7 +270,7 @@ export default function DatabaseUploadScreen({
       <ProjectList
         projects={projects}
         onLoadProject={onLoadProject}
-        onDeleteProject={onDeleteProject} // <-- Pasar la nueva prop
+        onDeleteProject={onDeleteProject}
       />
     </>
   );
