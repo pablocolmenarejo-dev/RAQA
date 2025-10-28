@@ -10,7 +10,7 @@ import { matchClientsAgainstMinisterios } from "@/services/matchingService";
 
 import type { MatchOutput, MatchRecord, Project, ProjectData } from "@/types";
 
-import LoginScreen from "@/components/LoginScreen"; // <-- AÑADIDO: Importar la pantalla de login
+import LoginScreen from "@/components/LoginScreen"; 
 
 // --- Claves de LocalStorage ---
 const LS_KEY_PROJECTS = "raqa:projects:v1";
@@ -18,18 +18,16 @@ const LS_KEY_DATA_PREFIX = "raqa:project:data:v1:";
 
 // --- Tipos para Filtros ---
 type TierFilter = "ALL" | "ALTA" | "REVISAR" | "SIN";
-// Nuevo tipo para el filtro de estado de validación
 type ValidationStatusFilter = Decision | 'COMPLETED' | 'PENDING_ALL' | 'ALL';
 
 export default function App() {
   // --- Estados ---
-  const [loggedInUser, setLoggedInUser] = useState<string | null>(null); // <-- AÑADIDO: Estado de autenticación
+  const [loggedInUser, setLoggedInUser] = useState<string | null>(null); 
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [currentData, setCurrentData] = useState<ProjectData | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [wizardFilter, setWizardFilter] = useState<TierFilter>("ALL");
-  // Nuevo estado para el filtro de validación
   const [validationStatusFilter, setValidationStatusFilter] = useState<ValidationStatusFilter>('ALL');
 
   // --- Effects (sin cambios) ---
@@ -63,7 +61,7 @@ export default function App() {
         const cleanData = { ...data, decisions: cleanDecisions, comments: cleanComments };
         setCurrentProjectId(id);
         setCurrentData(cleanData);
-        setValidationStatusFilter('ALL'); // Resetear filtro al cargar proyecto
+        setValidationStatusFilter('ALL'); 
       } catch (e) {
         console.error(e);
         alert("Error al cargar el proyecto. Revisa la consola.");
@@ -74,7 +72,7 @@ export default function App() {
     minFiles: FileList;
     projectName: string;
     userName: string;
-   }) => { // <-- 'userName' ahora vendrá pre-rellenado desde 'DatabaseUploadScreen'
+   }) => { 
       const prueba = await parsePrueba(data.pruebaFile);
       const ministeriosAoA = await parseMultipleMinisteriosAoA(Array.from(data.minFiles));
       const out = matchClientsAgainstMinisterios(prueba, ministeriosAoA);
@@ -82,7 +80,7 @@ export default function App() {
       const newProject: Project = { 
         id, 
         projectName: data.projectName, 
-        userName: data.userName, // <-- Usamos el 'userName' que viene del formulario
+        userName: data.userName, 
         savedAt: new Date().toISOString(), 
         summary: out.summary 
       };
@@ -93,7 +91,7 @@ export default function App() {
       setProjects(updatedProjects);
       setCurrentProjectId(id);
       setCurrentData(newData);
-      setValidationStatusFilter('ALL'); // Resetear filtro al crear proyecto
+      setValidationStatusFilter('ALL'); 
   };
   const handleDeleteProject = (id: string) => { /* ... */
       const project = projects.find(p => p.id === id);
@@ -111,7 +109,7 @@ export default function App() {
       setCurrentData(null);
       setShowWizard(false);
       setWizardFilter("ALL");
-      setValidationStatusFilter('ALL'); // Resetear filtro al volver
+      setValidationStatusFilter('ALL'); 
    };
   const openValidation = (tier?: TierFilter) => { /* ... */
       if (!currentData?.matchOutput?.matches?.length) return alert("No hay coincidencias.");
@@ -151,34 +149,18 @@ export default function App() {
     const arr = currentData?.matchOutput?.matches ?? [];
     const decisionsMap = currentData?.decisions ?? {};
     const commentsMap = currentData?.comments ?? {};
-
-    // Primero anotamos
     const annotated = arr.map((m) => {
       const key = makeMatchKey(m);
-      return {
-        ...m,
-        __decision: decisionsMap[key] as Decision | undefined,
-        __comment:  commentsMap[key] ?? "",
-      };
+      return { ...m, __decision: decisionsMap[key] as Decision | undefined, __comment:  commentsMap[key] ?? "", };
     });
-
-    // Luego filtramos según validationStatusFilter
-    if (validationStatusFilter === 'ALL') {
-      return annotated;
-    }
-    if (validationStatusFilter === 'COMPLETED') {
-      return annotated.filter(m => m.__decision === 'ACCEPTED' || m.__decision === 'REJECTED');
-    }
-    if (validationStatusFilter === 'PENDING_ALL') {
-      return annotated.filter(m => m.__decision !== 'ACCEPTED' && m.__decision !== 'REJECTED');
-    }
-    // Para ACCEPTED, REJECTED, STANDBY
+    if (validationStatusFilter === 'ALL') return annotated;
+    if (validationStatusFilter === 'COMPLETED') return annotated.filter(m => m.__decision === 'ACCEPTED' || m.__decision === 'REJECTED');
+    if (validationStatusFilter === 'PENDING_ALL') return annotated.filter(m => m.__decision !== 'ACCEPTED' && m.__decision !== 'REJECTED');
     return annotated.filter(m => m.__decision === validationStatusFilter);
-
-  }, [currentData, validationStatusFilter]); // Añadimos validationStatusFilter como dependencia
+  }, [currentData, validationStatusFilter]); 
 
   // Filtrado para el Wizard (sin cambios)
-  const matchesForWizard = useMemo(() => { /* ... */
+  const matchesForWizard = useMemo(() => { 
       const arr = currentData?.matchOutput?.matches ?? [];
       if (wizardFilter === "ALL") return arr;
       return arr.filter((m) => m.TIER === wizardFilter);
@@ -186,7 +168,6 @@ export default function App() {
 
   // --- RENDER ---
 
-  // <-- AÑADIDO: Lógica de Renderizado de Login
   if (!loggedInUser) {
     return (
       <LoginScreen 
@@ -195,45 +176,86 @@ export default function App() {
     );
   }
   
-  // Si estamos logueados, continuamos con la lógica normal
   if (!currentData) {
+    // El div exterior se elimina, #root en index.css gestiona el padding/margen
     return (
-      <div style={{ padding: "16px 0" }}>
-        <DatabaseUploadScreen
-          projects={projects}
-          onLoadProject={loadProject}
-          onRunNewProject={handleCreateProject}
-          onDeleteProject={handleDeleteProject}
-          loggedInUserName={loggedInUser} // <-- AÑADIDO: Pasar el nombre de usuario
-        />
-      </div>
+      <DatabaseUploadScreen
+        projects={projects}
+        onLoadProject={loadProject}
+        onRunNewProject={handleCreateProject}
+        onDeleteProject={handleDeleteProject}
+        loggedInUserName={loggedInUser} 
+      />
     );
   }
 
   const currentProjectMeta = projects.find(p => p.id === currentProjectId);
 
+  // --- ✅ INICIO: NUEVO RENDER CON BRANDING ---
   return (
-    <div style={{ padding: 16 }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-        {/* ... (Título y botones Exportar/Volver sin cambios) ... */}
-        <h1 style={{ margin: 0, flex: 1, fontSize: 24 }}>
-          {currentProjectMeta?.projectName || "RAQA – Resultados"}
-          {currentProjectMeta && ( <span style={{ fontSize: 14, color: '#5a7184', fontWeight: 400, marginLeft: 10 }}> (Por: {currentProjectMeta.userName}) </span> )}
-        </h1>
-        <button onClick={handleExport} style={{ /*...*/ padding: "8px 12px", borderRadius: 8, border: "1px solid #0c6", background: "#0f9d58", color: "#fff", fontWeight: 600, cursor: "pointer", }}> Exportar Excel </button>
-        <button onClick={handleReset} style={{ /*...*/ padding: "8px 12px", borderRadius: 8, border: "1px solid #999", cursor: "pointer", }}> ← Volver a Proyectos </button>
+    // El div exterior se elimina, #root en index.css lo gestiona
+    <>
+      <header style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        gap: 16, 
+        marginBottom: 16, 
+        flexWrap: "wrap",
+        padding: '20px 32px',
+        backgroundColor: '#ffffff',
+        borderRadius: '12px',
+        border: '1px solid var(--meisys-border)',
+        boxShadow: 'var(--meisys-card-shadow)',
+      }}>
+        <img src="/meisys-logo.webp" alt="Meisys Logo" style={{ height: 32, width: 'auto' }} />
+        
+        <div style={{ flex: 1, minWidth: '200px' }}>
+          <h1 style={{ 
+            margin: 0, 
+            fontFamily: 'var(--font-serif)', 
+            fontSize: 26, 
+            color: 'var(--meisys-title)',
+            lineHeight: 1.2,
+          }}>
+            {currentProjectMeta?.projectName || "Resultados de Validación"}
+          </h1>
+          {currentProjectMeta && ( 
+            <span style={{ fontSize: 14, color: 'var(--meisys-text-secondary)', fontWeight: 400, marginTop: '4px' }}>
+              Validando como: {currentProjectMeta.userName}
+            </span> 
+          )}
+        </div>
+        
+        <div style={{ display: "flex", gap: 12, flexWrap: 'wrap' }}>
+          <button onClick={handleExport} className="btn btn-primary">
+            Exportar Excel
+          </button>
+          <button onClick={handleReset} className="btn btn-secondary">
+            ← Volver a Proyectos
+          </button>
+        </div>
       </header>
 
+      {/* El Dashboard ya no necesita ser una tarjeta, sus estilos internos son suficientes */}
       <ResultsDashboard
         result={currentData.matchOutput}
         decisions={currentData.decisions}
         onOpenValidation={openValidation}
-        onOpenValidationStatus={handleValidationStatusFilterChange} // <-- Pasamos la nueva función
+        onOpenValidationStatus={handleValidationStatusFilterChange} 
       />
 
-      {/* Sección para mostrar el filtro activo y botón para limpiarlo */}
+      {/* Filtro Activo (sin cambios de estilo, se ve bien) */}
       {validationStatusFilter !== 'ALL' && (
-        <div style={{ margin: '16px 0', padding: '10px 15px', background: '#e3f2fd', border: '1px solid #bbdefb', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ 
+          margin: '16px 0', 
+          padding: '10px 15px', 
+          background: '#e3f2fd', 
+          border: '1px solid #bbdefb', 
+          borderRadius: '8px', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center' 
+        }}>
           <span style={{ color: '#0d47a1', fontWeight: 500 }}>
             Filtrando por: {validationStatusFilter.replace('_', ' ')}
           </span>
@@ -246,11 +268,14 @@ export default function App() {
         </div>
       )}
 
-      <ClientTable
-        data={annotatedAndFiltered} // <-- Pasamos los datos filtrados
-        decisions={currentData.decisions} // decisions y comments no necesitan filtrarse aquí
-        comments={currentData.comments}
-      />
+      {/* Envolvemos la tabla en una tarjeta */}
+      <div className="card">
+        <ClientTable
+          data={annotatedAndFiltered} 
+          decisions={currentData.decisions} 
+          comments={currentData.comments}
+        />
+      </div>
 
       {showWizard && (
         <ValidationWizard
@@ -263,8 +288,14 @@ export default function App() {
         />
       )}
 
-      {/* ... (Sección <details> sin cambios) ... */}
-       <details style={{ marginTop: 12 }}> <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto (Debug)</summary> <pre style={{ background: "#0b1021", color: "#cde6ff", padding: 12, borderRadius: 8, maxHeight: 320, overflow: "auto", fontSize: 12, }}> {JSON.stringify({ currentProjectId, currentData, projects, wizardFilter, validationStatusFilter, loggedInUser }, null, 2)} </pre> </details>
-    </div>
+      {/* Debug (sin cambios) */}
+       <details style={{ marginTop: 24, fontSize: 12, color: 'var(--meisys-text-secondary)' }}> 
+         <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto (Debug)</summary> 
+         <pre style={{ background: "#0b1021", color: "#cde6ff", padding: 12, borderRadius: 8, maxHeight: 320, overflow: "auto", fontSize: 12, }}> 
+           {JSON.stringify({ currentProjectId, currentData, projects, wizardFilter, validationStatusFilter, loggedInUser }, null, 2)} 
+         </pre> 
+       </details>
+    </>
   );
+  // --- ✅ FIN: NUEVO RENDER CON BRANDING ---
 }
