@@ -6,15 +6,16 @@ import * as XLSX from "xlsx";
 
 /**
  * Clave estable para cruzar decisiones/comentarios con los matches.
- * Debe ser lo más única posible; alineada con la usada en ValidationWizard.
+ * Debe ser idéntica a la usada en ValidationWizard.
  */
 function makeMatchKey(m: MatchRecord): string {
   return [
+    m.PRUEBA_customer ?? "",
     m.PRUEBA_nombre ?? "",
     m.PRUEBA_cp ?? "",
     m.MIN_codigo_centro ?? "",
     m.MIN_source ?? "",
-  ].join("|");
+  ].join("||"); // <-- CORREGIDO (5 campos, separador "||")
 }
 
 /**
@@ -47,7 +48,7 @@ export async function exportMatchesToExcel(
   // Construir filas "planas" para la hoja (una por match)
   const data = rows.map((m) => {
     // Prioriza anotaciones inline si existen; si no, usa los mapas
-    const key = makeMatchKey(m);
+    const key = makeMatchKey(m); // <-- Esta llamada ahora usará la clave correcta
     const dInline = (m as any).__decision as (string | undefined);
     const cInline = (m as any).__comment as (string | undefined);
 
@@ -79,8 +80,8 @@ export async function exportMatchesToExcel(
       "Oferta asistencial (AC)": m.MIN_oferta_asist ?? "",
 
       // Validación y comentarios
-      "Validación":              decisionToLabel(decision),
-      "Comentarios":             comment,
+      "Validación":              decisionToLabel(decision), // <-- Ahora se rellenará
+      "Comentarios":             comment,                   // <-- Ahora se rellenará
     };
   });
 
@@ -92,7 +93,7 @@ export async function exportMatchesToExcel(
   const headers = Object.keys(data[0] ?? {
     "Customer": "", "PRUEBA_nombre": "", "PRUEBA_street": "", "PRUEBA_city": "",
     "PRUEBA_cp": "", "PRUEBA_num": "", "MIN_nombre": "", "MIN_via": "", "MIN_num": "",
-    "MIN_municipio": "", "MIN_cp": "", "SCORE": "", "TIER": "", "Fuente": "",
+    "MIN_municipio": "", "MIN_cp": "", "SCORE": "", "TITULO": "", "Fuente": "",
     "Código centro (C)": "", "Fecha última aut. (Y)": "", "Oferta asistencial (AC)": "",
     "Validación": "", "Comentarios": "",
   });
@@ -127,4 +128,3 @@ export async function exportMatchesToExcel(
     URL.revokeObjectURL(url);
   }, 0);
 }
-
