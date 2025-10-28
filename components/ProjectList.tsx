@@ -1,12 +1,15 @@
+// En: components/ProjectList.tsx
 import React from "react";
 import type { Project } from "@/types";
 
 interface Props {
   projects: Project[];
   onLoadProject: (id: string) => void;
+  onDeleteProject: (id: string) => void; // <-- AÑADIR PROP
 }
 
-export default function ProjectList({ projects, onLoadProject }: Props) {
+export default function ProjectList({ projects, onLoadProject, onDeleteProject }: Props) {
+  
   const styles: { [key: string]: React.CSSProperties } = {
     container: {
       maxWidth: '700px',
@@ -35,7 +38,30 @@ export default function ProjectList({ projects, onLoadProject }: Props) {
       padding: '16px',
       cursor: 'pointer',
       transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+      position: 'relative', // <-- AÑADIR ESTO
     },
+    // --- AÑADIR NUEVO ESTILO PARA EL BOTÓN ---
+    deleteButton: {
+      position: 'absolute',
+      top: '8px',
+      right: '8px',
+      width: '24px',
+      height: '24px',
+      borderRadius: '50%',
+      background: '#ffebee', // Rojo pálido (color de TIER SIN)
+      color: '#c62828',    // Rojo (color de TIER SIN)
+      border: '1px solid #ffcdd2',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '14px',
+      fontWeight: 700,
+      lineHeight: '1',
+      cursor: 'pointer',
+      zIndex: 2, // Para que esté sobre el contenido
+      transition: 'background-color 0.2s ease',
+    },
+    // --- FIN NUEVO ESTILO ---
     cardProjectName: {
       fontSize: '16px',
       fontWeight: 700,
@@ -45,6 +71,7 @@ export default function ProjectList({ projects, onLoadProject }: Props) {
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
+      paddingRight: '20px', // Dejar espacio para el botón 'x'
     },
     cardUser: {
       fontSize: '13px',
@@ -82,6 +109,12 @@ export default function ProjectList({ projects, onLoadProject }: Props) {
     });
   };
 
+  // --- AÑADIR NUEVO HANDLER ---
+  const handleDeleteClick = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // MUY IMPORTANTE: Evita que se dispare el onLoadProject de la tarjeta
+    onDeleteProject(id); // Llama a la función de App.tsx (que mostrará la confirmación)
+  };
+
   return (
     <div style={styles.container}>
       <h2 style={styles.title}>Proyectos Guardados</h2>
@@ -95,7 +128,7 @@ export default function ProjectList({ projects, onLoadProject }: Props) {
             <div
               key={p.id}
               style={styles.card}
-              onClick={() => onLoadProject(p.id)}
+              onClick={() => onLoadProject(p.id)} // Click en la tarjeta carga el proyecto
               onMouseOver={(e) => {
                 e.currentTarget.style.transform = "translateY(-3px)";
                 e.currentTarget.style.boxShadow = "0 12px 25px rgba(0, 47, 94, 0.1)";
@@ -105,6 +138,19 @@ export default function ProjectList({ projects, onLoadProject }: Props) {
                 e.currentTarget.style.boxShadow = "0 8px 25px rgba(0, 47, 94, 0.07)";
               }}
             >
+              
+              {/* --- AÑADIR BOTÓN DE ELIMINAR --- */}
+              <div
+                style={styles.deleteButton}
+                title="Eliminar proyecto"
+                onClick={(e) => handleDeleteClick(e, p.id)} // Click en el botón elimina
+                onMouseOver={(e) => { e.currentTarget.style.background = '#ffcdd2'; }} // Efecto hover
+                onMouseOut={(e) => { e.currentTarget.style.background = '#ffebee'; }}
+              >
+                &times; {/* Este es el símbolo "X" */}
+              </div>
+              {/* --- FIN BOTÓN --- */}
+
               <div style={styles.cardProjectName} title={p.projectName}>{p.projectName}</div>
               <div style={styles.cardUser}>Por: {p.userName}</div>
               <div style={styles.cardDate}>{formatDate(p.savedAt)}</div>
