@@ -1,10 +1,12 @@
 // src/components/ResultsDashboard.tsx
 import React, { useMemo } from "react";
+// Ensure MatchRecord is imported if needed for type checks (though it's implicitly used via MatchOutput)
 import type { MatchOutput, MatchRecord } from "@/types";
-import type { DecisionMap, Decision } from "@/components/ValidationWizard"; // Asegúrate que Decision esté importado
+// Import Decision type
+import type { DecisionMap, Decision } from "@/components/ValidationWizard";
 import { makeMatchKey } from "@/components/ValidationWizard";
 
-// Tipo para el filtro, debe estar definido aquí o importado
+// Define the filter type locally or import if defined centrally
 type ValidationStatusFilter = Decision | 'COMPLETED' | 'PENDING_ALL' | 'ALL';
 
 interface Props {
@@ -82,14 +84,16 @@ const GoogleFonts = () => ( <style>{`@import url('https://fonts.googleapis.com/c
 export default function ResultsDashboard({ result, decisions = {}, onOpenValidation, onOpenValidationStatus }: Props) {
 
   const counts = useMemo(() => {
+    // Ensure result and result.matches are valid before proceeding
     const rows = result?.matches ?? [];
     let acc = 0, rej = 0, stb = 0;
     let pendingAlta = 0, pendingRevisar = 0, pendingSin = 0;
 
     for (const m of rows) {
+        // Basic check if 'm' looks like a MatchRecord (has TIER)
         if (typeof m !== 'object' || m === null || typeof m.TIER === 'undefined') {
           console.warn("Skipping invalid item in result.matches:", m);
-          continue;
+          continue; // Skip potentially invalid data
         }
       const key = makeMatchKey(m);
       const decision = decisions[key];
@@ -109,6 +113,7 @@ export default function ResultsDashboard({ result, decisions = {}, onOpenValidat
     }
 
     const totalPendingInbox = pendingAlta + pendingRevisar + pendingSin;
+    // Calculate actualPending safely
     const actualPending = Math.max(0, totalPendingInbox - stb);
     const completed = acc + rej;
 
