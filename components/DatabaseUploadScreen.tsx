@@ -184,7 +184,7 @@ export default function DatabaseUploadScreen({
           <img src="/meisys-logo.webp" alt="Meisys Logo" style={styles.logo} />
           <h1 style={styles.title}>Iniciar Nueva Validación</h1>
           <p style={styles.subtitle}>
-            Sube tu fichero <strong>PRUEBA</strong> y los ficheros del <strong>Ministerio</strong> para crear un proyecto.
+            Sube tu fichero <strong>PRUEBA</strong> y los ficheros del <strong>REGCESS</strong> para crear un proyecto.
           </p>
         </header>
 
