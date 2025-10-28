@@ -10,6 +10,8 @@ import { matchClientsAgainstMinisterios } from "@/services/matchingService";
 
 import type { MatchOutput, MatchRecord, Project, ProjectData } from "@/types";
 
+import LoginScreen from "@/components/LoginScreen"; // <-- AÑADIDO: Importar la pantalla de login
+
 // --- Claves de LocalStorage ---
 const LS_KEY_PROJECTS = "raqa:projects:v1";
 const LS_KEY_DATA_PREFIX = "raqa:project:data:v1:";
@@ -21,6 +23,7 @@ type ValidationStatusFilter = Decision | 'COMPLETED' | 'PENDING_ALL' | 'ALL';
 
 export default function App() {
   // --- Estados ---
+  const [loggedInUser, setLoggedInUser] = useState<string | null>(null); // <-- AÑADIDO: Estado de autenticación
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [currentData, setCurrentData] = useState<ProjectData | null>(null);
@@ -66,12 +69,23 @@ export default function App() {
         alert("Error al cargar el proyecto. Revisa la consola.");
       }
    };
-  const handleCreateProject = async (data: { /* ... */ }) => { /* ... */
+  const handleCreateProject = async (data: { 
+    pruebaFile: File;
+    minFiles: FileList;
+    projectName: string;
+    userName: string;
+   }) => { // <-- 'userName' ahora vendrá pre-rellenado desde 'DatabaseUploadScreen'
       const prueba = await parsePrueba(data.pruebaFile);
       const ministeriosAoA = await parseMultipleMinisteriosAoA(Array.from(data.minFiles));
       const out = matchClientsAgainstMinisterios(prueba, ministeriosAoA);
       const id = new Date().getTime().toString();
-      const newProject: Project = { id, projectName: data.projectName, userName: data.userName, savedAt: new Date().toISOString(), summary: out.summary };
+      const newProject: Project = { 
+        id, 
+        projectName: data.projectName, 
+        userName: data.userName, // <-- Usamos el 'userName' que viene del formulario
+        savedAt: new Date().toISOString(), 
+        summary: out.summary 
+      };
       const newData: ProjectData = { matchOutput: out, decisions: {}, comments: {} };
       const updatedProjects = [...projects, newProject];
       localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(updatedProjects));
@@ -172,6 +186,16 @@ export default function App() {
 
   // --- RENDER ---
 
+  // <-- AÑADIDO: Lógica de Renderizado de Login
+  if (!loggedInUser) {
+    return (
+      <LoginScreen 
+        onLoginSuccess={(username) => setLoggedInUser(username)}
+      />
+    );
+  }
+  
+  // Si estamos logueados, continuamos con la lógica normal
   if (!currentData) {
     return (
       <div style={{ padding: "16px 0" }}>
@@ -180,6 +204,7 @@ export default function App() {
           onLoadProject={loadProject}
           onRunNewProject={handleCreateProject}
           onDeleteProject={handleDeleteProject}
+          loggedInUserName={loggedInUser} // <-- AÑADIDO: Pasar el nombre de usuario
         />
       </div>
     );
@@ -239,7 +264,7 @@ export default function App() {
       )}
 
       {/* ... (Sección <details> sin cambios) ... */}
-       <details style={{ marginTop: 12 }}> <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto (Debug)</summary> <pre style={{ background: "#0b1021", color: "#cde6ff", padding: 12, borderRadius: 8, maxHeight: 320, overflow: "auto", fontSize: 12, }}> {JSON.stringify({ currentProjectId, currentData, projects, wizardFilter, validationStatusFilter }, null, 2)} </pre> </details>
+       <details style={{ marginTop: 12 }}> <summary style={{ cursor: "pointer", marginBottom: 8 }}>Ver JSON bruto (Debug)</summary> <pre style={{ background: "#0b1021", color: "#cde6ff", padding: 12, borderRadius: 8, maxHeight: 320, overflow: "auto", fontSize: 12, }}> {JSON.stringify({ currentProjectId, currentData, projects, wizardFilter, validationStatusFilter, loggedInUser }, null, 2)} </pre> </details>
     </div>
   );
 }
