@@ -56,3 +56,31 @@ export interface MatchOutput {
   };
 }
 
+// En: types.ts
+// (Añade esto al final del archivo)
+
+import type { DecisionMap } from "@/components/ValidationWizard";
+
+// ... (El resto de tus tipos: PruebaRow, MinisterioAoA, MatchRecord, etc.)
+
+/**
+ * Metadatos de un proyecto guardado.
+ * Esto es lo que se mostrará en la lista de proyectos.
+ */
+export interface Project {
+  id: string; // ID único (usaremos un timestamp)
+  projectName: string;
+  userName: string;
+  savedAt: string; // Fecha en formato ISO
+  summary: MatchOutput["summary"]; // Para mostrar contadores (ALTA, REVISAR, SIN)
+}
+
+/**
+ * Datos completos de un proyecto guardado.
+ * Se almacena por separado en localStorage para no sobrecargar la lista inicial.
+ */
+export interface ProjectData {
+  matchOutput: MatchOutput;
+  decisions: DecisionMap;
+  comments: Record<string, string>;
+}
