@@ -138,8 +138,28 @@ function prepareSources(ministeriosAoA: Record<string, MinisterioAoA>) {
 
     const inb = (i:number|null)=> i!=null && i>=0 && i < headers.length;
 
-    // 3) dfm normalizado
-    const dfm = body.map(row=>{
+    // --- INICIO DE MODIFICACIÓN (FILTRO U.83 FARMACIA) ---
+    // 3) Filtrar el 'body' ANTES de mapear.
+    //    Solo queremos filas que contengan "U.83 Farmacia" en la columna de Oferta Asistencial.
+    const bodyFiltered = body.filter(row => {
+      if (idx.oferta === null || !inb(idx.oferta)) {
+        // Si no se encontró la columna 'oferta', no podemos validar. Descartamos la fila.
+        return false;
+      }
+      const ofertaVal = row[idx.oferta as number];
+      // Comprobamos que el string "U.83 Farmacia" exista.
+      return String(ofertaVal ?? "").includes("U.83 Farmacia");
+    });
+
+    // Opcional: Log de filas descartadas
+    const discardedCount = body.length - bodyFiltered.length;
+    if (discardedCount > 0) {
+      console.info(`[matching][${source}] Descartadas ${discardedCount} de ${body.length} filas por no tener "U.83 Farmacia" en columna ${safeHeader(headers, idx.oferta)}.`);
+    }
+    // --- FIN DE MODIFICACIÓN ---
+
+    // 3b) dfm normalizado (mapeando solo las filas filtradas)
+    const dfm = bodyFiltered.map(row=>{
       const g = (i:number|null)=> inb(i)? row[i as number] : null;
       const nombre = String(g(idx.nombre) ?? "");
       const via    = String(g(idx.via) ?? "");
@@ -175,9 +195,21 @@ export function matchClientsAgainstMinisterios(
 ): MatchOutput {
   // PRUEBA → derivados
   if(!pruebaRows || pruebaRows.length===0) throw new Error("PRUEBA está vacío.");
-  const need = ["INFO_1","STREET","CITY","PostalCode"];
+  
+  // ***** MODIFICACIÓN SUGERIDA: Comprobar columnas requeridas de PRUEBA *****
+  // El código original buscaba "PostalCode", pero en "constants.ts" no aparece.
+  // "constants.ts" define REQUIRED_COLUMNS: ["STREET", "CITY"]
+  // y OPTIONAL_COLUMNS: ["Customer", "INFO_1", "INFO_2", "CIF_NIF"]
+  // El matching usa "INFO_1", "STREET", "CITY", y también "PostalCode".
+  // Vamos a asumir que las columnas que el *matching* necesita son las importantes.
+  const need = ["STREET", "CITY", "INFO_1", "PostalCode"]; // Columnas que el matching usa
   const cols = new Set(Object.keys(pruebaRows[0]||{}));
-  for(const n of need) if(!cols.has(n)) throw new Error(`En PRUEBA falta '${n}'. Columnas: ${Array.from(cols).join(", ")}`);
+  const missing = need.filter(n => !cols.has(n));
+  if(missing.length > 0) {
+    throw new Error(`En PRUEBA falta(n) columna(s) necesaria(s) para el matching: ${missing.join(", ")}. Columnas encontradas: ${Array.from(cols).join(", ")}`);
+  }
+  // **************************************************************************
+
 
   const dfp = pruebaRows.map((r)=> {
     const name = [r["INFO_1"]||"", r["INFO_2"]||"", r["INFO_3"]||""].join(" ").trim();
@@ -194,7 +226,7 @@ export function matchClientsAgainstMinisterios(
     };
   });
 
-  // Preprocesar todas las fuentes una sola vez
+  // Preprocesar todas las fuentes una sola vez (esto ahora incluye el filtro U.83)
   const sources = prepareSources(ministeriosAoA);
 
   const allMatches: MatchRecord[] = [];
@@ -205,6 +237,9 @@ export function matchClientsAgainstMinisterios(
     const scoredGlobal: Array<{ sc:number; src:string; m:any }> = [];
 
     for (const { source, dfm } of sources) {
+      // Si el dfm está vacío (porque todo fue filtrado por U.83), saltamos
+      if (dfm.length === 0) continue;
+
       // 1) CP exacto
       let cand = r._cp ? dfm.filter(m=> m._cp === r._cp) : [];
       // 2) municipio (contains en ambos sentidos)
@@ -212,7 +247,8 @@ export function matchClientsAgainstMinisterios(
         cand = dfm.filter(m=> m._mun && (m._mun===r._mun || m._mun.includes(r._mun) || r._mun.includes(m._mun)));
       }
       // 3) capado sin bloqueo (¡esto es lo que faltaba!)
-      if(cand.length===0){ cand = dfm.slice(0, Math.min(4000, dfm.length)); }
+      // Si no hay candidatos por CP/Mun, usamos el DFM completo (ya filtrado por U.83)
+      if(cand.length===0){ cand = dfm; } // Ya no necesitamos slice, el dfm es más pequeño
 
       for (const m of cand) {
         let s = W_NAME*fuzzy(r._name, m._name) + W_STREET*fuzzy(r._street_core, m._street_core);
@@ -307,4 +343,3 @@ export function matchClientsAgainstMinisterios(
     },
   };
 }
-
