@@ -309,9 +309,12 @@ export function matchClientsAgainstMinisterios(
 
   // Orden estable
   allMatches.sort((a,b)=> {
-    const ca = (a.PRUEBA_customer ?? "").localeCompare(b.PRUEBA_customer ?? "");
-    return ca!==0 ? ca : b.SCORE - a.SCORE;
-  });
+    const custA = String(a.PRUEBA_customer ?? "");
+    const custB = String(b.PRUEBA_customer ?? "");
+  
+   const ca = custA.localeCompare(custB);
+   return ca !== 0 ? ca : b.SCORE - a.SCORE;
+});
 
   return {
     matches: allMatches,
